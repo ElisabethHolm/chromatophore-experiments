@@ -17,8 +17,8 @@ from collections import OrderedDict
 import matplotlib.pyplot as plt  # matplotlib 3.5.2
 
 # TODO add required flag -z for zoom level and make a function that sets these nums based on zoom lvl
-WINDOW_WIDTH = 1000 #500
-CHROM_PIXEL_DIAMETER = 61 #31  # must be odd
+WINDOW_WIDTH = 1000 #used to be 500
+CHROM_PIXEL_DIAMETER = 61 #used to be 31  # must be odd
 MAX_DISAPPEARED = 30
 
 nextObjectID = 0
@@ -111,7 +111,7 @@ def isolateChromContours (contours):
 	return contours
 '''
 
-# TODO fix - maybe just take out largest contour?? maybe do by
+# TODO fix - prototype
 def isolateChroms(contours, threshold):
 	# sorts the contours by area with largest area first
 	contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
@@ -132,8 +132,6 @@ def isolateChroms(contours, threshold):
 	cv2.waitKey(0)
 
 	return threshNoElectrode
-
-
 
 
 # create rotated bounding rectangles for each contour in contours
@@ -172,7 +170,6 @@ def sortLR(contours):
 # return the sorted contours and bounding boxes
 def sortTB(contours):
 	# construct the list of bounding boxes
-	#boundingBoxes = createBoundingRects(contours)
 	boundingBoxes = createRotatedBRects(contours)
 
 	# sort from top to bottom
@@ -306,15 +303,10 @@ def matchCentroids(curCentroids):
 		usedRows.add(row)
 		usedCols.add(col)
 
-
 	# compute both the row and column index we have NOT yet
 	# examined
 	unusedRows = set(range(0, D.shape[0])).difference(usedRows)
 	unusedCols = set(range(0, D.shape[1])).difference(usedCols)
-
-	#print(unusedRows)
-	#print(unusedCols)
-	#print()
 
 	# loop over the unused row indexes
 	for row in unusedRows:
@@ -534,7 +526,7 @@ def processData(vidPath):
 		cv2.destroyWindow("ID frame for " + str(curFrameIndex))
 
 		# save generated images to the frame_cap folder
-		#saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
+		saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
 
 
 		# TODO delete prints once debugging over
@@ -567,13 +559,13 @@ def processData(vidPath):
 		curFrameIndex += 1  # update frame index
 
 	# plot chromatophore areas
-	#plotChromAreas()
+	plotChromAreas()
 
 	# close any open windows
 	cv2.destroyAllWindows()
 
 	# close graph display
-	#plt.close()
+	plt.close()
 
 
 processData(curVidPath)  # run the summary function
