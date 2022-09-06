@@ -6,7 +6,7 @@
 
 # so I don't have to type it out every time:
 # cd Downloads/Coding/Chromatophore_Research/dataProcessing
-# python3 areaCalc.py
+# python3 vidProcessing.py
 
 # import the necessary packages
 import imutils  # imutils 0.5.4
@@ -15,24 +15,68 @@ import numpy as np  # numpy 1.22.4
 from scipy.spatial import distance as dist  # scipy 1.8.1
 from collections import OrderedDict
 import matplotlib.pyplot as plt  # matplotlib 3.5.2
+import argparse  # argparse 1.4.0
+from xlwt import Workbook  # xlwt 1.3.0
 
-# TODO add required flag -z for zoom level and make a function that sets these nums based on zoom lvl
-WINDOW_WIDTH = 1000 #used to be 500
-CHROM_PIXEL_DIAMETER = 61 #used to be 31  # must be odd
+WINDOW_WIDTH = 1000
+(ORIGINAL_WIDTH, ORIGINAL_HEIGHT) = (1920, 1080)
+CHROM_PIXEL_DIAMETER = 103  # assumes zoom of 7 and WINDOW_WIDTH of 1000 pix
+PIXELS_PER_MM = 1
 MAX_DISAPPEARED = 30
 
 nextObjectID = 0
 disappeared = OrderedDict()
 matchedCentroids = OrderedDict()
 chromAreas = OrderedDict()
+initialCentroids = OrderedDict()
+finalDataset = OrderedDict()
 
 # directory of raw video to process (relative to where this program file is)
 #curVidPath = "15_41.811_12TEA+TTX.m4v"  # oldest vid, good w option B or C
 curVidPath = "New_Vids/April_22/VID00062.AVI"  # main test -- new, no muscle, great w/ option C (outlines clear but hollow)
+#curVidPath = "New_Vids/April_22/VID00062_cropped.mov"  # smaller portion of frame from vid in line above, used for testing program on small scale
 #curVidPath = "New_Vids/April_22/45_4-20-22.AVI" # new, decent w/ option B (reduced noise but can't identify big one), or E with (7, 7)
 #curVidPath = "New_Vids/April_22/VID00065.AVI"  # pulled from Puneeta on 6/23 (not from 6/23 experiment)
 #curVidPath = "New_Vids/April_22/VID00056.AVI"  # pulled from Puneeta on 6/23 (not from 6/23 experiment), struggles w keeping ID nums
 #curVidPath = "New_Vids/June_22/TS-20220630153941965.avi"  # from June lab visit
+
+ap = argparse.ArgumentParser()
+ap.add_argument("-z", "--zoom", default=7, help="zoom level of microscope (7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, or 90)")
+ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, help="desired pixel width of frame")
+ap.add_argument("-v", "--vid", default=curVidPath, help="file path of video")
+args = vars(ap.parse_args())
+
+
+# sets the global constants for
+# window width and chromatophore pixel diameter based on
+# arguments
+def setGlobalNums():
+	global WINDOW_WIDTH
+	global CHROM_PIXEL_DIAMETER
+	global PIXELS_PER_MM
+	global curVidPath
+	global args
+
+	WINDOW_WIDTH = args["window_width"]
+	zoom = float(args["zoom"])
+	curVidPath = args["vid"]
+
+	windowHeight = WINDOW_WIDTH * (ORIGINAL_HEIGHT/ORIGINAL_WIDTH)
+	zoom7ChromHeightRatio = 5.5/30  # ratio of radius of expanded chrom over height of window
+
+	# calculate ratio of chromatophore radius to height of window
+	# if you want to use the conditional set above, take this line out
+	chromToHeightRatio = zoom7ChromHeightRatio * (zoom / 7)
+
+	CHROM_PIXEL_DIAMETER = int(windowHeight * chromToHeightRatio)
+
+	# ensure CHROM_PIXEL_DIAMETER is odd (requirement for param it's passed into)
+	if CHROM_PIXEL_DIAMETER % 2 == 0:
+		CHROM_PIXEL_DIAMETER += 1
+
+	# pixels per mm adjusting for zoom and window width
+	# Note: at x50 zoom, number of pixels for 1 mm is 800.353 on 1920x1080 display
+	PIXELS_PER_MM = (zoom / 50) * (800.353 / 1920) * WINDOW_WIDTH
 
 
 # masks the current frame from the video to identify only the chromatophores
@@ -43,22 +87,7 @@ def maskChromatophores(curFrame):
 	# convert frame to grayscale
 	gray_frame = cv2.cvtColor(curFrame, cv2.COLOR_BGR2GRAY)
 	# apply Gaussian blur to reduce noise
-	gray_frame = cv2.GaussianBlur(gray_frame, (3, 3), 0)
-
-	# TODO use this to mask out electrode and hook (maybe)
-
-	'''
-	# convert to LAB color space
-	rgb_img = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2RGB)  # gray to RGB
-	bgr_img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) # RGB to GBR
-	lab = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2LAB)  # BGR to lab 
-
-	# get luminance channel
-	l_component = lab[:, :, 0]
-
-	# setting threshold level at 110, 125 also p good
-	ret, threshold = cv2.threshold(l_component, 110, 255, cv2.THRESH_BINARY_INV)
-	'''
+	gray_frame = cv2.GaussianBlur(gray_frame, (5, 5), 0)
 
 	# identifies darkest parts of frame in order to mask out chromatophores from background
 	#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 5, 2)  # B. good, semi noisy/inaccurate blur (11, 11) !
@@ -68,7 +97,7 @@ def maskChromatophores(curFrame):
 	threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, CHROM_PIXEL_DIAMETER, 10)
 	# 2nd to last param should be roughly the num of pixels of the diameter of an avg chromatophore in the frame
 
-	return gray_frame, threshold  # return masked frame
+	return gray_frame, threshold  # return gray/blurred and masked frame
 
 
 # define and draw the contour lines based on the masked frame
@@ -77,61 +106,12 @@ def contour(threshold, origImg):
 	# detect the contours on the binary image
 	contours, hierarchy = cv2.findContours(image=threshold, mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_NONE)
 
-	#threshNoElectrode = isolateChroms(contours, threshold)
-
-	# sorts the contours by area with largest area first
-	#contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
-	#contours = contours[:40]  # only take the 40 contours with the largest area
-
-	# detect the contours on the binary image
-	#contours, hierarchy = cv2.findContours(image=threshNoElectrode, mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_NONE)
-
 	# draw contours on the original image
 	contourCopy = origImg.copy()
-	#cv2.drawContours(image=contourCopy, contours=contours, contourIdx=-1, color=(0, 255, 0), thickness=1, lineType=cv2.LINE_AA)
 	cv2.drawContours(image=contourCopy, contours=contours, contourIdx=-1, color=(0, 255, 0),
 					 thickness=cv2.FILLED, lineType=cv2.LINE_AA)
 
 	return contourCopy, contours
-
-
-# TODO implement ? somehow, maybe not here
-'''
-# takes in the contours and hierarchy, returns only
-# contours of individual chromatophores (getting rid of extra objects)
-def isolateChromContours (contours):
-	# only call if -electrode flag raised?
-	# could try to remove electrode from selected region of interest (selected manually by mouse)
-
-	# select the bounding box of the object we want to track (make
-	# sure you press ENTER or SPACE after selecting the ROI)
-	box = cv2.selectROI("Frame", frame, fromCenter=False, showCrosshair=True)
-	# from https://pyimagesearch.com/2018/08/06/tracking-multiple-objects-with-opencv/
-
-	return contours
-'''
-
-# TODO fix - prototype
-def isolateChroms(contours, threshold):
-	# sorts the contours by area with largest area first
-	contours = sorted(contours, key=lambda x: cv2.contourArea(x), reverse=True)
-	electrode = contours[0]  # electrode is biggest contour
-
-	electrodeMask = np.zeros_like(threshold, dtype=np.uint8)
-
-	cv2.drawContours(image=electrodeMask, contours=[electrode], contourIdx=-1, color=(255, 255, 255),
-					 thickness=cv2.FILLED, lineType=cv2.LINE_AA)
-
-	cv2.imshow("electrode mask", electrodeMask)
-	cv2.waitKey(0)
-
-	# mask over original image
-	threshNoElectrode = cv2.bitwise_xor(threshold, electrodeMask)
-
-	cv2.imshow("masked out electrode", threshNoElectrode)
-	cv2.waitKey(0)
-
-	return threshNoElectrode
 
 
 # create rotated bounding rectangles for each contour in contours
@@ -231,6 +211,7 @@ def register(centroid):
 	matchedCentroids[nextObjectID] = centroid
 	disappeared[nextObjectID] = 0
 	chromAreas[nextObjectID] = {}
+	initialCentroids[nextObjectID] = centroid
 	nextObjectID += 1
 
 
@@ -324,35 +305,6 @@ def matchCentroids(curCentroids):
 		register(curCentroids[col])
 
 
-	'''
-	# in the event that the number of object centroids is
-	# equal or greater than the number of input centroids
-	# we need to check and see if some of these objects have
-	# potentially disappeared
-	if D.shape[0] >= D.shape[1]:
-		# loop over the unused row indexes
-		for row in unusedRows:
-			# grab the object ID for the corresponding row
-			# index and increment the disappeared counter
-			objectID = objectIDs[row]
-			disappeared[objectID] += 1
-			# check to see if the number of consecutive
-			# frames the object has been marked "disappeared"
-			# for warrants deregistering the object
-			if disappeared[objectID] > MAX_DISAPPEARED:
-				deregister(objectID)
-
-	# otherwise, if the number of input centroids is greater
-	# than the number of existing object centroids we need to
-	# register each new input centroid as a trackable object
-	else:
-		for col in unusedCols:
-			register(curCentroids[col])
-	'''
-			
-
-
-
 # takes in chromatophore contours, calculates area for each chromatophore
 # adds area to appropriate area time series
 # (the list of areas under the chrom w/ the correct ID num)
@@ -361,6 +313,7 @@ def calcCurAreas(centroidsToContours, curFrameIndex):
 	global chromAreas
 	global matchedCentroids
 	global disappeared
+	global PIXELS_PER_MM
 
 	# iterate through each centroid that's paired with an ID number
 	# and add the area of each centroid's contour into chromAreas for this frame index
@@ -372,6 +325,10 @@ def calcCurAreas(centroidsToContours, curFrameIndex):
 		if disappeared[ID_num] < 1:
 			curContour = centroidsToContours[centroid]  # get corresponding contour
 			contourArea = cv2.contourArea(curContour)  # calculate area of corresponding contour
+
+			# convert area from pixels^2 to mm^2
+			contourArea = contourArea/PIXELS_PER_MM
+
 			# add entry of area for this chrom's area in this frame
 			chromAreas[ID_num][curFrameIndex] = contourArea
 
@@ -397,15 +354,54 @@ def drawIDNums(boundingRects, frame):
 	return frame
 
 
+# filter out irrelevant data entries (ex: chrom that was only identified in
+# a few frames)
+def cleanUpData():
+	global chromAreas
+
+	# make a copy to iterate through to avoid "mutated during iteration" error
+	origChromAreas = chromAreas.copy()
+
+	for id_num, areas in origChromAreas.items():
+		# if a certain chromatophore has less than 25 area data entries
+		# (~1 sec since usually about 25fps), delete it from the dataset
+		if len(areas) < 25:
+			del chromAreas[id_num]
+			del initialCentroids[id_num]
+
+
+# format final dataset into a spreadsheet
+# important note: the xlwt library currently only supports up to 256 columns
+# so the amount of chromatophores in the selected ROI must be < 257
+def formatData():
+	global chromAreas
+
+	# Workbook is created
+	wb = Workbook()
+	areasSheet = wb.add_sheet('Areas')
+	centroidsSheet = wb.add_sheet('Centroids')
+
+	# iterate through each identified chromatophore
+	for id_num, areas in chromAreas.items():
+		# add centroid to the centroids sheet
+		(x, y) = initialCentroids[id_num]
+		centroidsSheet.write(1, id_num, x)
+		centroidsSheet.write(2, id_num, y)
+
+		# add area time series to areas sheet
+		for frame_num, area in areas.items():
+			areasSheet.write(frame_num, id_num, area)
+
+	directory = curVidPath[:-4] + ".xls"
+	wb.save(directory)
+
+
 # plots chrom areas over time (each chromatophore is
 # one line) then shows and saves the graph to the computer
 def plotChromAreas():
 	global chromAreas
-	#        1     2    3    4    5    6   8    9    10   11   12   13   14   15
-	#want = {126, 125, 136, 140, 152, 119, 171, 145, 169, 170, 151, 172, 179, 183}
 
 	for id_num, areas in chromAreas.items():
-		#if id_num in want:
 		x = areas.keys()
 		y = areas.values()
 
@@ -413,7 +409,7 @@ def plotChromAreas():
 
 	# label the graph
 	plt.xlabel('Frame Index')  # naming the x-axis
-	plt.ylabel('Area (in pixels)')  # naming the y-axis
+	plt.ylabel('Area (in mm)')  # naming the y-axis
 	plt.title('Areas of individual chromatophores for ' + curVidPath)  # title the graph
 	plt.legend()  # show a legend on the plot
 
@@ -496,6 +492,15 @@ def processData(vidPath):
 		# resize frame to make it easier to compare different windows
 		frame = imutils.resize(frame, width=WINDOW_WIDTH)
 
+		# select region of interest
+		if curFrameIndex == 0:
+			# Get ROI, record its (x,y) and height/width
+			# note: x and y coordinates are of top left corner
+			[ROI_x, ROI_y, ROI_width, ROI_height] = cv2.selectROI("Select ROI", frame, fromCenter=False, showCrosshair=True)
+
+		# resize the frame to only include the ROI
+		frame = frame[ROI_y:ROI_y + ROI_height, ROI_x: ROI_x + ROI_width]
+
 		# mask out the chromatophores and display the masked frame
 		gray_frame, thresh_frame = maskChromatophores(frame)
 
@@ -511,7 +516,6 @@ def processData(vidPath):
 		# if first frame, create dict of chromatophores and begin object tracking
 		if curFrameIndex == 0:
 			createMatchedCentroids(curCentroids)  # initialize matchedCentroids dict
-
 		# otherwise match each current centroid with an ID num
 		else:
 			matchCentroids(curCentroids)
@@ -528,44 +532,30 @@ def processData(vidPath):
 		# save generated images to the frame_cap folder
 		saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
 
-
-		# TODO delete prints once debugging over
-		'''
-		print(len(matchedCentroids))
-
-		# the centroids in matchedCentroids but not centroidsToContours
-		print(set(matchedCentroids.values()).difference(set(centroidsToContours.keys())))
-		# the centroids in centroidsToContours but not matchedCentroids
-		print(set(centroidsToContours.keys()).difference(set(matchedCentroids.values())))
-
-		# ID num and index
-		indexOf739_86_centroid = list(matchedCentroids.values()).index((739.0, 86.0))
-		print(indexOf739_86_centroid)
-		print(list(matchedCentroids.keys())[indexOf739_86_centroid])
-
-		print(len(centroidsToContours))
-		print()
-
-		debugframe = cv2.cvtColor(ID_frame.copy(), cv2.COLOR_BGR2GRAY)
-		debugframe = cv2.cvtColor(debugframe, cv2.COLOR_GRAY2RGB)
-		cv2.circle(debugframe, (739, 86), 3, (0, 255, 0), -1)
-		cv2.circle(debugframe, (767, 314), 3, (0, 255, 0), -1)
-		cv2.imwrite("frame_cap/debug" + str(curFrameIndex) + ".png", debugframe)
-		'''
-
 		# add areas of chromatophores from current frame to chromAreas
 		calcCurAreas(centroidsToContours, curFrameIndex)
 
 		curFrameIndex += 1  # update frame index
 
-	# plot chromatophore areas
-	plotChromAreas()
+	# filter out irrelevant data entries
+	cleanUpData()
 
+	# format final dataset and save as an .xls file in video's original directory
+	formatData()
+
+	# plot chromatophore areas
+	#plotChromAreas()
+
+	# close graph display
+	#plt.close()
+
+	print(chromAreas)
 	# close any open windows
 	cv2.destroyAllWindows()
 
-	# close graph display
-	plt.close()
 
+# use argument vals if any given, otherwise use default nums
+setGlobalNums()
 
-processData(curVidPath)  # run the summary function
+# run the program's summary function
+processData(curVidPath)
