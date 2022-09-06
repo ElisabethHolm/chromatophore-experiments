@@ -10,7 +10,7 @@
 
 # import the necessary packages
 import imutils  # imutils 0.5.4
-import cv2  # opencv-contrib-python 4.6.0.66 if using multiTracker, opencv-python 4.6.0.66 otherwise
+import cv2  # opencv-python 4.6.0.66
 import numpy as np  # numpy 1.22.4
 from scipy.spatial import distance as dist  # scipy 1.8.1
 from collections import OrderedDict
@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt  # matplotlib 3.5.2
 import argparse  # argparse 1.4.0
 from xlwt import Workbook  # xlwt 1.3.0
 
+# these values will be set in setGlobalNums() based on cmd arguments
 WINDOW_WIDTH = 1000
 (ORIGINAL_WIDTH, ORIGINAL_HEIGHT) = (1920, 1080)
 CHROM_PIXEL_DIAMETER = 103  # assumes zoom of 7 and WINDOW_WIDTH of 1000 pix
@@ -25,11 +26,10 @@ PIXELS_PER_MM = 1
 MAX_DISAPPEARED = 30
 
 nextObjectID = 0
-disappeared = OrderedDict()
-matchedCentroids = OrderedDict()
-chromAreas = OrderedDict()
-initialCentroids = OrderedDict()
-finalDataset = OrderedDict()
+disappeared = OrderedDict()  # objectID : num of frames it has disappeared for
+matchedCentroids = OrderedDict()  # objectID : centroid
+chromAreas = OrderedDict()  # objectID : area time series
+initialCentroids = OrderedDict()  # object ID : centroid when it was first detected
 
 # directory of raw video to process (relative to where this program file is)
 #curVidPath = "15_41.811_12TEA+TTX.m4v"  # oldest vid, good w option B or C
@@ -43,7 +43,10 @@ curVidPath = "New_Vids/April_22/VID00062.AVI"  # main test -- new, no muscle, gr
 ap = argparse.ArgumentParser()
 ap.add_argument("-z", "--zoom", default=7, help="zoom level of microscope (7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, or 90)")
 ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, help="desired pixel width of frame")
+ap.add_argument("-x", "--original_width", default=1920, help="width of original frame in pixels")
+ap.add_argument("-y", "--original_height", default=1080, help="height of original frame in pixels")
 ap.add_argument("-v", "--vid", default=curVidPath, help="file path of video")
+
 args = vars(ap.parse_args())
 
 
@@ -54,10 +57,14 @@ def setGlobalNums():
 	global WINDOW_WIDTH
 	global CHROM_PIXEL_DIAMETER
 	global PIXELS_PER_MM
+	global ORIGINAL_WIDTH
+	global ORIGINAL_HEIGHT
 	global curVidPath
 	global args
 
-	WINDOW_WIDTH = args["window_width"]
+	WINDOW_WIDTH = int(args["window_width"])
+	ORIGINAL_WIDTH = int(args["original_width"])
+	ORIGINAL_HEIGHT = int(args["original_height"])
 	zoom = float(args["zoom"])
 	curVidPath = args["vid"]
 
@@ -392,7 +399,9 @@ def formatData():
 		for frame_num, area in areas.items():
 			areasSheet.write(frame_num, id_num, area)
 
+
 	directory = curVidPath[:-4] + ".xls"
+	print(curVidPath)
 	wb.save(directory)
 
 
@@ -549,7 +558,7 @@ def processData(vidPath):
 	# close graph display
 	#plt.close()
 
-	print(chromAreas)
+	#print(chromAreas)
 	# close any open windows
 	cv2.destroyAllWindows()
 
