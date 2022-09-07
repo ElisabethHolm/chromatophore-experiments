@@ -18,11 +18,11 @@ import matplotlib.pyplot as plt  # matplotlib 3.5.2
 import argparse  # argparse 1.4.0
 from xlwt import Workbook  # xlwt 1.3.0
 
-# these values will be set in setGlobalNums() based on cmd arguments
+# these values will be adjusted in setGlobalNums() based on cmd arguments
 WINDOW_WIDTH = 1000
 (ORIGINAL_WIDTH, ORIGINAL_HEIGHT) = (1920, 1080)
-CHROM_PIXEL_DIAMETER = 103  # assumes zoom of 7 and WINDOW_WIDTH of 1000 pix
-PIXELS_PER_MM = 1
+CHROM_PIXEL_DIAMETER = 0
+PIXELS_PER_MM = 0
 MAX_DISAPPEARED = 30
 
 nextObjectID = 0
@@ -33,19 +33,23 @@ initialCentroids = OrderedDict()  # object ID : centroid when it was first detec
 
 # directory of raw video to process (relative to where this program file is)
 #curVidPath = "15_41.811_12TEA+TTX.m4v"  # oldest vid, good w option B or C
-curVidPath = "New_Vids/April_22/VID00062.AVI"  # main test -- new, no muscle, great w/ option C (outlines clear but hollow)
+#curVidPath = "New_Vids/April_22/VID00062.AVI"  # main test -- new, no muscle, great w/ option C (outlines clear but hollow)
 #curVidPath = "New_Vids/April_22/VID00062_cropped.mov"  # smaller portion of frame from vid in line above, used for testing program on small scale
 #curVidPath = "New_Vids/April_22/45_4-20-22.AVI" # new, decent w/ option B (reduced noise but can't identify big one), or E with (7, 7)
 #curVidPath = "New_Vids/April_22/VID00065.AVI"  # pulled from Puneeta on 6/23 (not from 6/23 experiment)
 #curVidPath = "New_Vids/April_22/VID00056.AVI"  # pulled from Puneeta on 6/23 (not from 6/23 experiment), struggles w keeping ID nums
 #curVidPath = "New_Vids/June_22/TS-20220630153941965.avi"  # from June lab visit
+curVidPath = "New_Vids/Sept_2022_Tests/TS-20220801155100769.mp4"
 
+# available arguments for user to change settings
 ap = argparse.ArgumentParser()
 ap.add_argument("-z", "--zoom", default=7, help="zoom level of microscope (7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, or 90)")
 ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, help="desired pixel width of frame")
-ap.add_argument("-x", "--original_width", default=1920, help="width of original frame in pixels")
-ap.add_argument("-y", "--original_height", default=1080, help="height of original frame in pixels")
+ap.add_argument("-x", "--original_width", default=ORIGINAL_WIDTH, help="width of original frame in pixels")
+ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, help="height of original frame in pixels")
+ap.add_argument("-r", "--ROI", help="x, y, w, h of region of interest")
 ap.add_argument("-v", "--vid", default=curVidPath, help="file path of video")
+ap.add_argument("-s", "--stop", default="off", help="if you want the video to stop and wait for a spacebar at every frame")
 
 args = vars(ap.parse_args())
 
@@ -68,22 +72,40 @@ def setGlobalNums():
 	zoom = float(args["zoom"])
 	curVidPath = args["vid"]
 
-	windowHeight = WINDOW_WIDTH * (ORIGINAL_HEIGHT/ORIGINAL_WIDTH)
-	zoom7ChromHeightRatio = 5.5/30  # ratio of radius of expanded chrom over height of window
+	# pixels per mm adjusting for zoom, original resolution, and window width
+	# Note: at x50 zoom, number of pixels for 1 mm is 800.353 on 1920x1080 display
+	PIXELS_PER_MM = (zoom / 50) * (800.353 / 1920) * (1920 / ORIGINAL_WIDTH) * WINDOW_WIDTH
 
-	# calculate ratio of chromatophore radius to height of window
-	# if you want to use the conditional set above, take this line out
-	chromToHeightRatio = zoom7ChromHeightRatio * (zoom / 7)
-
-	CHROM_PIXEL_DIAMETER = int(windowHeight * chromToHeightRatio)
+	# Note: a fully expanded market squid chromatophore is ~1.7 mm in diameter
+	CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 1.7)
 
 	# ensure CHROM_PIXEL_DIAMETER is odd (requirement for param it's passed into)
 	if CHROM_PIXEL_DIAMETER % 2 == 0:
 		CHROM_PIXEL_DIAMETER += 1
 
-	# pixels per mm adjusting for zoom and window width
-	# Note: at x50 zoom, number of pixels for 1 mm is 800.353 on 1920x1080 display
-	PIXELS_PER_MM = (zoom / 50) * (800.353 / 1920) * WINDOW_WIDTH
+
+# Set ROI from command line or the user manually choosing
+# takes in the first frame of the video and returns ROI coordinates/dimensions
+def getROI(frame):
+	print(args["ROI"])
+	# if an ROI was passed in as a command line arg, use that ROI
+	if args["ROI"] != None:
+		[ROI_x, ROI_y, ROI_width, ROI_height] = args["ROI"].split(" ")
+		ROI_x = int(ROI_x)
+		ROI_y = int(ROI_y)
+		ROI_width = int(ROI_width)
+		ROI_height = int(ROI_height)
+
+	# Have user manually choose ROI, record (x,y) and height/width
+	else:
+		[ROI_x, ROI_y, ROI_width, ROI_height] = cv2.selectROI("Select ROI", frame, fromCenter=False,
+															  showCrosshair=True)
+		cv2.destroyWindow("Select ROI")
+
+	print("Region selected:")
+	print("x:", ROI_x, " y:", ROI_y, " width:", ROI_width, " height:", ROI_height)
+
+	return ROI_x, ROI_y, ROI_width, ROI_height
 
 
 # masks the current frame from the video to identify only the chromatophores
@@ -380,7 +402,8 @@ def cleanUpData():
 # format final dataset into a spreadsheet
 # important note: the xlwt library currently only supports up to 256 columns
 # so the amount of chromatophores in the selected ROI must be < 257
-def formatData():
+# takes in number of frames in the video and the ROI coordinates/dimensions
+def formatData(numFrames, ROI):
 	global chromAreas
 
 	# Workbook is created
@@ -388,21 +411,37 @@ def formatData():
 	areasSheet = wb.add_sheet('Areas')
 	centroidsSheet = wb.add_sheet('Centroids')
 
+	# put "frame" in excel sheet in upper left corner
+	areasSheet.write(0, 0, "frame")
+
+	# add column in column 0 that says each frame number
+	for frame_num in range(numFrames + 1):
+		areasSheet.write(frame_num + 1, 0, frame_num)
+
+	curCol = 1
+
 	# iterate through each identified chromatophore
 	for id_num, areas in chromAreas.items():
+		# add ID num to both sheets on row 0
+		areasSheet.write(0, curCol, "C" + str(id_num))
+		centroidsSheet.write(0, curCol, "C" + str(id_num))
+
 		# add centroid to the centroids sheet
 		(x, y) = initialCentroids[id_num]
-		centroidsSheet.write(1, id_num, x)
-		centroidsSheet.write(2, id_num, y)
+		centroidsSheet.write(1, curCol, x)
+		centroidsSheet.write(2, curCol, y)
 
 		# add area time series to areas sheet
 		for frame_num, area in areas.items():
-			areasSheet.write(frame_num, id_num, area)
+			areasSheet.write(frame_num + 1, curCol, area)
 
+		curCol += 1
 
-	directory = curVidPath[:-4] + ".xls"
-	print(curVidPath)
+	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
+	directory = curVidPath[:-4] + roiString + ".xls"
 	wb.save(directory)
+
+	print("Saved xls data file to " + directory)
 
 
 # plots chrom areas over time (each chromatophore is
@@ -414,10 +453,10 @@ def plotChromAreas():
 		x = areas.keys()
 		y = areas.values()
 
-		plt.plot(x, y, label=str(id_num))
+		plt.plot(x, y, label="C" + str(id_num))
 
 	# label the graph
-	plt.xlabel('Frame Index')  # naming the x-axis
+	plt.xlabel('Frame')  # naming the x-axis
 	plt.ylabel('Area (in mm)')  # naming the y-axis
 	plt.title('Areas of individual chromatophores for ' + curVidPath)  # title the graph
 	plt.legend()  # show a legend on the plot
@@ -446,7 +485,6 @@ def showImages(curFrameIndex, original, gray, threshold, contours, ID_labeled):
 	cv2.destroyWindow("Threshold" + str(curFrameIndex))
 	cv2.destroyWindow("Contours" + str(curFrameIndex))
 	cv2.destroyWindow("IDs + centroids + bounding boxes " + str(curFrameIndex))
-
 
 
 # saves each generated image individually in the frame_cap folder
@@ -502,10 +540,9 @@ def processData(vidPath):
 		frame = imutils.resize(frame, width=WINDOW_WIDTH)
 
 		# select region of interest
+		# note: x and y coordinates are of top left corner of ROI
 		if curFrameIndex == 0:
-			# Get ROI, record its (x,y) and height/width
-			# note: x and y coordinates are of top left corner
-			[ROI_x, ROI_y, ROI_width, ROI_height] = cv2.selectROI("Select ROI", frame, fromCenter=False, showCrosshair=True)
+			ROI_x, ROI_y, ROI_width, ROI_height = getROI(frame)
 
 		# resize the frame to only include the ROI
 		frame = frame[ROI_y:ROI_y + ROI_height, ROI_x: ROI_x + ROI_width]
@@ -536,6 +573,11 @@ def processData(vidPath):
 		#showImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
 		cv2.imshow("ID frame for " + str(curFrameIndex), ID_frame)
 		cv2.waitKey(1)
+
+		# if the -s flag is raised, wait until the user presses spacebar to move onto the next frame
+		if args["stop"] != "off":
+			cv2.waitKey(0)
+
 		cv2.destroyWindow("ID frame for " + str(curFrameIndex))
 
 		# save generated images to the frame_cap folder
@@ -550,7 +592,7 @@ def processData(vidPath):
 	cleanUpData()
 
 	# format final dataset and save as an .xls file in video's original directory
-	formatData()
+	formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height])
 
 	# plot chromatophore areas
 	#plotChromAreas()
