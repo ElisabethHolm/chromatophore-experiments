@@ -17,6 +17,7 @@ from collections import OrderedDict
 import matplotlib.pyplot as plt  # matplotlib 3.5.2
 import argparse  # argparse 1.4.0
 from xlwt import Workbook  # xlwt 1.3.0
+import math
 
 # these values will be adjusted in setGlobalNums() based on cmd arguments
 WINDOW_WIDTH = 1000
@@ -56,7 +57,7 @@ args = vars(ap.parse_args())
 
 # sets the global constants for
 # window width and chromatophore pixel diameter based on
-# arguments
+# command line arguments
 def setGlobalNums():
 	global WINDOW_WIDTH
 	global CHROM_PIXEL_DIAMETER
@@ -74,10 +75,10 @@ def setGlobalNums():
 
 	# pixels per mm adjusting for zoom, original resolution, and window width
 	# Note: at x50 zoom, number of pixels for 1 mm is 800.353 on 1920x1080 display
-	PIXELS_PER_MM = (zoom / 50) * (800.353 / 1920) * (1920 / ORIGINAL_WIDTH) * WINDOW_WIDTH
+	PIXELS_PER_MM = (800.353 / 1920) * (zoom / 50) * (1920 / ORIGINAL_WIDTH) * WINDOW_WIDTH
 
 	# Note: a fully expanded market squid chromatophore is ~1.7 mm in diameter
-	CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 1.7)
+	CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 2.5)  # use 2.5 maybe, sometimes connects adjacent ones
 
 	# ensure CHROM_PIXEL_DIAMETER is odd (requirement for param it's passed into)
 	if CHROM_PIXEL_DIAMETER % 2 == 0:
@@ -87,7 +88,6 @@ def setGlobalNums():
 # Set ROI from command line or the user manually choosing
 # takes in the first frame of the video and returns ROI coordinates/dimensions
 def getROI(frame):
-	print(args["ROI"])
 	# if an ROI was passed in as a command line arg, use that ROI
 	if args["ROI"] != None:
 		[ROI_x, ROI_y, ROI_width, ROI_height] = args["ROI"].split(" ")
@@ -123,22 +123,34 @@ def maskChromatophores(curFrame):
 	#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 5, 3)  # C. some noise but true to size, blur (3, 3) !!
 	#threshold = cv2.adaptiveThreshold(gray_frame,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY_INV, 3 ,1)  # D. higher threshhold, noisy but true to size, blur (13, 13)
 	#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 3, 2)  # E. not super solid but good mask, blur (5, 5)
-	threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, CHROM_PIXEL_DIAMETER, 10)
+	threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, CHROM_PIXEL_DIAMETER, 10) # currently using
 	# 2nd to last param should be roughly the num of pixels of the diameter of an avg chromatophore in the frame
+
+	'''
+	# convert to LAB color space
+	rgb_img = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2RGB)  # gray to RGB
+	bgr_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR) # RGB to GBR
+	lab = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2LAB)  # BGR to lab
+	# get luminance channel
+	l_component = lab[:, :, 0]
+	# setting threshold level at 110, 125 also p good
+	ret, threshold = cv2.threshold(l_component, 215, 255, cv2.THRESH_BINARY_INV)
+	'''
+
 
 	return gray_frame, threshold  # return gray/blurred and masked frame
 
 
 # define and draw the contour lines based on the masked frame
-# takes in the binary masked image, returns the list of chromatophores
+# takes in the binary masked image and original image, returns the list of chromatophores
 def contour(threshold, origImg):
 	# detect the contours on the binary image
 	contours, hierarchy = cv2.findContours(image=threshold, mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_NONE)
 
 	# draw contours on the original image
 	contourCopy = origImg.copy()
-	cv2.drawContours(image=contourCopy, contours=contours, contourIdx=-1, color=(0, 255, 0),
-					 thickness=cv2.FILLED, lineType=cv2.LINE_AA)
+	cv2.drawContours(image=contourCopy, contours=contours, contourIdx=-1, color=(0, 255, 0), thickness=1)
+					 #thickness=cv2.FILLED, lineType=cv2.LINE_AA)
 
 	return contourCopy, contours
 
@@ -150,6 +162,7 @@ def createRotatedBRects(contours):
 
 
 # draw rotated rectangle
+# takes in a rotated rectangle and image to draw it on
 def drawRotatedRect(rect, img):
 	# calculate corners of box
 	box = cv2.boxPoints(rect)
@@ -253,7 +266,7 @@ def deregister(objectID):
 	# our respective dictionaries
 	del matchedCentroids[objectID]
 	del disappeared[objectID]
-	del chromAreas[objectID]
+	#del chromAreas[objectID] # TODO check if taking this out messes anything up
 
 
 # compare current centroids with previous centroids to
@@ -356,7 +369,7 @@ def calcCurAreas(centroidsToContours, curFrameIndex):
 			contourArea = cv2.contourArea(curContour)  # calculate area of corresponding contour
 
 			# convert area from pixels^2 to mm^2
-			contourArea = contourArea/PIXELS_PER_MM
+			contourArea = contourArea/(PIXELS_PER_MM**2)
 
 			# add entry of area for this chrom's area in this frame
 			chromAreas[ID_num][curFrameIndex] = contourArea
@@ -383,6 +396,14 @@ def drawIDNums(boundingRects, frame):
 	return frame
 
 
+# takes in a 1D list of areas, returns the standard deviation
+def getStdDev(areas):
+	mean = sum(areas)/len(areas)
+	variance = sum((x - mean) ** 2 for x in areas) / sum(areas)
+	stdDev = math.sqrt(variance)
+	return stdDev
+
+
 # filter out irrelevant data entries (ex: chrom that was only identified in
 # a few frames)
 def cleanUpData():
@@ -397,13 +418,17 @@ def cleanUpData():
 		if len(areas) < 25:
 			del chromAreas[id_num]
 			del initialCentroids[id_num]
+		# if a chromatophore doesn't change much over the course of the video, delete it
+		elif getStdDev(areas.values()) < 0.05:
+			del chromAreas[id_num]
+			del initialCentroids[id_num]
 
 
 # format final dataset into a spreadsheet
 # important note: the xlwt library currently only supports up to 256 columns
-# so the amount of chromatophores in the selected ROI must be < 257
+# so the amount of chromatophores in the selected ROI must be < 256
 # takes in number of frames in the video and the ROI coordinates/dimensions
-def formatData(numFrames, ROI):
+def formatData(numFrames, ROI, cleaned):
 	global chromAreas
 
 	# Workbook is created
@@ -411,8 +436,14 @@ def formatData(numFrames, ROI):
 	areasSheet = wb.add_sheet('Areas')
 	centroidsSheet = wb.add_sheet('Centroids')
 
-	# put "frame" in excel sheet in upper left corner
+	# Put labels on the sheets
 	areasSheet.write(0, 0, "frame")
+	centroidsSheet.write(0, 0, "Centroid (in pixels)")
+	centroidsSheet.write(1, 0, "x")
+	centroidsSheet.write(2, 0, "y")
+	centroidsSheet.write(3, 0, "Pixels per mm:")
+	centroidsSheet.write(3, 1, PIXELS_PER_MM)
+
 
 	# add column in column 0 that says each frame number
 	for frame_num in range(numFrames + 1):
@@ -438,9 +469,14 @@ def formatData(numFrames, ROI):
 		curCol += 1
 
 	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
-	directory = curVidPath[:-4] + roiString + ".xls"
-	wb.save(directory)
 
+	if cleaned:
+		directory = curVidPath[:-4] + roiString + ".xls"
+		wb.save(directory)
+	else:
+		directory = curVidPath[:-4] + roiString + "_uncleaned" + ".xls"
+
+	wb.save(directory)
 	print("Saved xls data file to " + directory)
 
 
@@ -588,11 +624,14 @@ def processData(vidPath):
 
 		curFrameIndex += 1  # update frame index
 
+	# save uncleaned data in a .xls file
+	formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height], cleaned=False)
+
 	# filter out irrelevant data entries
 	cleanUpData()
 
-	# format final dataset and save as an .xls file in video's original directory
-	formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height])
+	# format cleaned dataset and save as a .xls file in video's original directory
+	formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height], cleaned=True)
 
 	# plot chromatophore areas
 	#plotChromAreas()
@@ -600,7 +639,6 @@ def processData(vidPath):
 	# close graph display
 	#plt.close()
 
-	#print(chromAreas)
 	# close any open windows
 	cv2.destroyAllWindows()
 
