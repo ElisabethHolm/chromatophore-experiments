@@ -51,6 +51,7 @@ ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, help="height
 ap.add_argument("-r", "--ROI", help="x, y, w, h of region of interest")
 ap.add_argument("-v", "--vid", default=curVidPath, help="file path of video")
 ap.add_argument("-s", "--stop", default="off", help="if you want the video to stop and wait for a spacebar at every frame")
+ap.add_argument("-c", "--computer_system", default="mac", help="file path of video")
 
 args = vars(ap.parse_args())
 
@@ -552,12 +553,19 @@ def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled):
 	cv2.imwrite("frame_cap/process_" + str(curFrameIndex) + ".png", processImg)
 
 
+# had to make these into global variables to account for windows compatibility
+ROI_x, ROI_y, ROI_width, ROI_height = 0, 0, ORIGINAL_WIDTH, ORIGINAL_HEIGHT
+
 # summary function of entire program
 # takes in filepath to raw video and returns time series
 # of each chromatophores' change in area
 def processData(vidPath):
 	global matchedCentroids
 	global chromAreas
+	global ROI_x
+	global ROI_y
+	global ROI_width
+	global ROI_height
 
 	# open the video
 	vid = cv2.VideoCapture(vidPath)
@@ -614,7 +622,8 @@ def processData(vidPath):
 		if args["stop"] != "off":
 			cv2.waitKey(0)
 
-		cv2.destroyWindow("ID frame for " + str(curFrameIndex))
+		if args["computer_system"] == "mac":
+			cv2.destroyWindow("ID frame for " + str(curFrameIndex))
 
 		# save generated images to the frame_cap folder
 		saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
