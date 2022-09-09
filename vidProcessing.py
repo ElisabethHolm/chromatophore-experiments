@@ -51,7 +51,6 @@ ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, help="height
 ap.add_argument("-r", "--ROI", help="x, y, w, h of region of interest")
 ap.add_argument("-v", "--vid", default=curVidPath, help="file path of video")
 ap.add_argument("-s", "--stop", default="off", help="if you want the video to stop and wait for a spacebar at every frame")
-ap.add_argument("-c", "--computer_system", default="mac", help="file path of video")
 
 args = vars(ap.parse_args())
 
@@ -507,8 +506,28 @@ def plotChromAreas():
 	#plt.savefig('areas_' + curVid + '.png')
 
 
+# shows the current frame with chromatophore IDs, adjusting
+# for mac and windows systems (running on windows made an error with displaying the frame
+# in the same place)
+def showIDFrame(curFrameIndex, ID_frame):
+	cv2.imshow("ID frame for " + str(curFrameIndex), ID_frame)
+
+	# move window to same spot in screen as the previous windows
+	cv2.moveWindow("ID frame for " + str(curFrameIndex), 10, 10)
+
+	# if the -s flag is raised, wait until the user presses spacebar to move onto the next frame
+	if args["stop"] != "off":
+		cv2.waitKey(0)
+
+	cv2.waitKey(1)
+
+	if curFrameIndex > 0:
+		# destroy previous frame's window to avoid program slowing down
+		cv2.destroyWindow("ID frame for " + str(curFrameIndex - 1))
+
+
 # show images from each step of the process
-def showImages(curFrameIndex, original, gray, threshold, contours, ID_labeled):
+def showAllImages(curFrameIndex, original, gray, threshold, contours, ID_labeled):
 	cv2.imshow("Original" + str(curFrameIndex), original)
 	cv2.imshow("Grayscale + Gaussian Blur" + str(curFrameIndex), gray)
 	cv2.imshow("Threshold" + str(curFrameIndex), threshold)
@@ -614,16 +633,8 @@ def processData(vidPath):
 		ID_frame = drawIDNums(sortedBoundingBoxes, frame.copy())
 
 		# show images
-		#showImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
-		cv2.imshow("ID frame for " + str(curFrameIndex), ID_frame)
-		cv2.waitKey(1)
-
-		# if the -s flag is raised, wait until the user presses spacebar to move onto the next frame
-		if args["stop"] != "off":
-			cv2.waitKey(0)
-
-		if args["computer_system"] == "mac":
-			cv2.destroyWindow("ID frame for " + str(curFrameIndex))
+		#showAllImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
+		showIDFrame(curFrameIndex, ID_frame)
 
 		# save generated images to the frame_cap folder
 		saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
