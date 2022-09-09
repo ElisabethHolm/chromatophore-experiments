@@ -2,7 +2,7 @@
 # Calculates the changing areas of chromatophores from raw video data
 # using computer vision (openCV)
 # Python 3.10.4
-# Spring 2022 - Present
+# April 2022 - Sept 2022
 
 # so I don't have to type it out every time:
 # cd Downloads/Coding/Chromatophore_Research/dataProcessing
@@ -98,8 +98,7 @@ def getROI(frame):
 
 	# Have user manually choose ROI, record (x,y) and height/width
 	else:
-		[ROI_x, ROI_y, ROI_width, ROI_height] = cv2.selectROI("Select ROI", frame, fromCenter=False,
-															  showCrosshair=True)
+		[ROI_x, ROI_y, ROI_width, ROI_height] = cv2.selectROI("Select ROI", frame, fromCenter=False,showCrosshair=True)
 		cv2.destroyWindow("Select ROI")
 
 	print("Region selected:")
@@ -123,7 +122,7 @@ def maskChromatophores(curFrame):
 	#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 5, 3)  # C. some noise but true to size, blur (3, 3) !!
 	#threshold = cv2.adaptiveThreshold(gray_frame,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY_INV, 3 ,1)  # D. higher threshhold, noisy but true to size, blur (13, 13)
 	#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 3, 2)  # E. not super solid but good mask, blur (5, 5)
-	threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, CHROM_PIXEL_DIAMETER, 10) # currently using
+	threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, CHROM_PIXEL_DIAMETER, 10)  # currently using
 	# 2nd to last param should be roughly the num of pixels of the diameter of an avg chromatophore in the frame
 
 	'''
@@ -137,11 +136,10 @@ def maskChromatophores(curFrame):
 	ret, threshold = cv2.threshold(l_component, 215, 255, cv2.THRESH_BINARY_INV)
 	'''
 
-
 	return gray_frame, threshold  # return gray/blurred and masked frame
 
 
-# define and draw the contour lines based on the masked frame
+# defines and draws the contour lines based on the masked frame
 # takes in the binary masked image and original image, returns the list of chromatophores
 def contour(threshold, origImg):
 	# detect the contours on the binary image
@@ -150,19 +148,19 @@ def contour(threshold, origImg):
 	# draw contours on the original image
 	contourCopy = origImg.copy()
 	cv2.drawContours(image=contourCopy, contours=contours, contourIdx=-1, color=(0, 255, 0), thickness=1)
-					 #thickness=cv2.FILLED, lineType=cv2.LINE_AA)
 
 	return contourCopy, contours
 
 
-# create rotated bounding rectangles for each contour in contours
+# creates rotated bounding rectangles for each contour in contours
 # returns a list of bounding rects
 def createRotatedBRects(contours):
 	return [cv2.minAreaRect(c) for c in contours]
 
 
-# draw rotated rectangle
+# draws rotated rectangle
 # takes in a rotated rectangle and image to draw it on
+# returns the image with the rectangle drawn on it
 def drawRotatedRect(rect, img):
 	# calculate corners of box
 	box = cv2.boxPoints(rect)
@@ -174,8 +172,8 @@ def drawRotatedRect(rect, img):
 	return img
 
 
-# sort the given contours from left to right
-# return the sorted contours and sorted bounding boxes
+# sorts the given contours from left to right
+# returns the sorted contours and sorted bounding boxes
 def sortLR(contours):
 	# construct the list of bounding boxes
 	boundingBoxes = createRotatedBRects(contours)
@@ -188,8 +186,8 @@ def sortLR(contours):
 	return sortedContours, sortedBoundingBoxes
 
 
-# sort the given contours from top to bottom
-# return the sorted contours and bounding boxes
+# sorts the given contours from top to bottom
+# returns the sorted contours and bounding boxes
 def sortTB(contours):
 	# construct the list of bounding boxes
 	boundingBoxes = createRotatedBRects(contours)
@@ -203,7 +201,7 @@ def sortTB(contours):
 
 
 # takes in the chromatophore contours found in the first frame (ff)
-# of the video; builds and returns the list of chromatophores
+# of the video; Builds the chromAreas list of chromatophores
 # (setting up to later add area data for each chromatophore)
 def createAreasDict(ff_contours):
 	global chromAreas
@@ -241,7 +239,7 @@ def getCentroids(bBoxes, contours):
 	return centroids, centroidsToContours
 
 
-# register a new chromatophore in
+# register a new chromatophore
 def register(centroid):
 	global matchedCentroids
 	global disappeared
@@ -257,7 +255,7 @@ def register(centroid):
 	nextObjectID += 1
 
 
-# deregister given object in matchedCentroids and disappeared dicts
+# deregister given chromatophore in matchedCentroids and disappeared dicts
 def deregister(objectID):
 	global matchedCentroids
 	global disappeared
@@ -266,11 +264,10 @@ def deregister(objectID):
 	# our respective dictionaries
 	del matchedCentroids[objectID]
 	del disappeared[objectID]
-	#del chromAreas[objectID] # TODO check if taking this out messes anything up
 
 
 # compare current centroids with previous centroids to
-# determine the closest one
+# determine the closest matches
 # and return the calculated IDs of each current centroid.
 # takes in the list of current centroids and dict of previous matched centroids
 # returns dict of ID_num:current centroids matched
@@ -424,10 +421,10 @@ def cleanUpData():
 			del initialCentroids[id_num]
 
 
-# format final dataset into a spreadsheet
-# important note: the xlwt library currently only supports up to 256 columns
-# so the amount of chromatophores in the selected ROI must be < 256
+# formats final dataset into a spreadsheet and saves to the same folder as the video
 # takes in number of frames in the video and the ROI coordinates/dimensions
+# Important note: the xlwt library currently only supports up to 256 columns,
+# so the amount of chromatophores in the selected ROI must be < 256
 def formatData(numFrames, ROI, cleaned):
 	global chromAreas
 
@@ -443,7 +440,6 @@ def formatData(numFrames, ROI, cleaned):
 	centroidsSheet.write(2, 0, "y")
 	centroidsSheet.write(3, 0, "Pixels per mm:")
 	centroidsSheet.write(3, 1, PIXELS_PER_MM)
-
 
 	# add column in column 0 that says each frame number
 	for frame_num in range(numFrames + 1):
@@ -480,8 +476,8 @@ def formatData(numFrames, ROI, cleaned):
 	print("Saved xls data file to " + directory)
 
 
-# plots chrom areas over time (each chromatophore is
-# one line) then shows and saves the graph to the computer
+# Plots chrom areas over time (each chromatophore is one line) then shows the graph
+# Commented out: saving the graph to the computer
 def plotChromAreas():
 	global chromAreas
 
@@ -501,21 +497,20 @@ def plotChromAreas():
 	plt.show()
 
 	# save the graph
-	#curVid = curVidPath.replace("/", "_")
-	#curVid = curVid.replace(".", "")
-	#plt.savefig('areas_' + curVid + '.png')
+	# curVid = curVidPath.replace("/", "_")
+	# curVid = curVid.replace(".", "")
+	# plt.savefig('areas_' + curVid + '.png')
 
 
 # shows the current frame with chromatophore IDs, adjusting
-# for mac and windows systems (running on windows made an error with displaying the frame
-# in the same place)
+# for mac and windows systems (running on windows caused an error with displaying the frame)
 def showIDFrame(curFrameIndex, ID_frame):
 	cv2.imshow("ID frame for " + str(curFrameIndex), ID_frame)
 
 	# move window to same spot in screen as the previous windows
 	cv2.moveWindow("ID frame for " + str(curFrameIndex), 10, 10)
 
-	# if the -s flag is raised, wait until the user presses spacebar to move onto the next frame
+	# if the -s flag is raised, wait until the user presses a key to move onto the next frame
 	if args["stop"] != "off":
 		cv2.waitKey(0)
 
@@ -575,9 +570,11 @@ def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled):
 # had to make these into global variables to account for windows compatibility
 ROI_x, ROI_y, ROI_width, ROI_height = 0, 0, ORIGINAL_WIDTH, ORIGINAL_HEIGHT
 
+
 # summary function of entire program
-# takes in filepath to raw video and returns time series
-# of each chromatophores' change in area
+# takes in filepath to raw video, goes through entire identification process,
+# and saves the time series of each chromatophores' change in area as
+# .xls files – one for cleaned data and one for uncleaned data
 def processData(vidPath):
 	global matchedCentroids
 	global chromAreas
