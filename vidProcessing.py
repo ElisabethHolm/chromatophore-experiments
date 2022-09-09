@@ -51,6 +51,7 @@ ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, help="height
 ap.add_argument("-r", "--ROI", help="x, y, w, h of region of interest")
 ap.add_argument("-v", "--vid", default=curVidPath, help="file path of video")
 ap.add_argument("-s", "--stop", default="off", help="if you want the video to stop and wait for a spacebar at every frame")
+ap.add_argument("-d", "--display_vid", default="on", help="if you want the video to show as the program runs")
 
 args = vars(ap.parse_args())
 
@@ -508,7 +509,7 @@ def showIDFrame(curFrameIndex, ID_frame):
 	cv2.imshow("ID frame for " + str(curFrameIndex), ID_frame)
 
 	# move window to same spot in screen as the previous windows
-	cv2.moveWindow("ID frame for " + str(curFrameIndex), 10, 10)
+	#cv2.moveWindow("ID frame for " + str(curFrameIndex), 10, 10)
 
 	# if the -s flag is raised, wait until the user presses a key to move onto the next frame
 	if args["stop"] != "off":
@@ -563,8 +564,10 @@ def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled):
 	processImg = np.concatenate((processImg, contours), axis=0)
 	processImg = np.concatenate((processImg, ID_labeled), axis=0)
 
+	vidName = curVidPath.split("/")[-1][:-4]
+
 	# save in frame_cap folder
-	cv2.imwrite("frame_cap/process_" + str(curFrameIndex) + ".png", processImg)
+	cv2.imwrite("frame_cap/" + vidName + "_process_" + str(curFrameIndex) + ".png", processImg)
 
 
 # had to make these into global variables to account for windows compatibility
@@ -629,9 +632,10 @@ def processData(vidPath):
 		# draw matched ID numbers and centroids onto original frame
 		ID_frame = drawIDNums(sortedBoundingBoxes, frame.copy())
 
-		# show images
-		#showAllImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
-		showIDFrame(curFrameIndex, ID_frame)
+		if args["display_vid"] == "on":
+			# show images
+			#showAllImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
+			showIDFrame(curFrameIndex, ID_frame)
 
 		# save generated images to the frame_cap folder
 		saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
