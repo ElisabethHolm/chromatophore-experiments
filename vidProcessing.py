@@ -15,9 +15,12 @@ import numpy as np  # numpy 1.22.4
 from scipy.spatial import distance as dist  # scipy 1.8.1
 from collections import OrderedDict
 import matplotlib.pyplot as plt  # matplotlib 3.5.2
-import argparse  # argparse 1.4.0
 from xlwt import Workbook  # xlwt 1.3.0
 import math
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser # argparse 1.4.0
+from gooey import Gooey # Gooey 1.0.8.1
+import os
+
 
 # these values will be adjusted in setGlobalNums() based on cmd arguments
 WINDOW_WIDTH = 1000
@@ -42,19 +45,48 @@ initialCentroids = OrderedDict()  # object ID : centroid when it was first detec
 #curVidPath = "New_Vids/June_22/TS-20220630153941965.avi"  # from June lab visit
 curVidPath = "New_Vids/Sept_2022_Tests/TS-20220801155100769.mp4"
 
-# available arguments for user to change settings
-ap = argparse.ArgumentParser()
-ap.add_argument("-z", "--zoom", default=7, help="zoom level of microscope (7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, or 90)")
-ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, help="desired pixel width of frame")
-ap.add_argument("-x", "--original_width", default=ORIGINAL_WIDTH, help="width of original frame in pixels")
-ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, help="height of original frame in pixels")
-ap.add_argument("-r", "--ROI", help="x, y, w, h of region of interest")
-ap.add_argument("-v", "--vid", default=curVidPath, help="file path of video")
-ap.add_argument("-s", "--stop", default="off", help="if you want the video to stop and wait for a spacebar at every frame")
-ap.add_argument("-d", "--display_vid", default="on", help="if you want the video to show as the program runs")
+args = []
 
-args = vars(ap.parse_args())
+@Gooey # The GUI Decorator goes here
+def parse_args():
+	global args
+	# parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter,
+	#                         conflict_handler='resolve')
+	# parser.add_argument('--dim_red_type', default='PCA', choices=[
+	#   		              'PCA','LLE'], help='The dim red. types')
+	# parser.add_argument('--n_comp', default=10, type=int, choices=[
+	#  		                 5,10], help='output dimensions')
+	# parser.add_argument('--classifier', default='LR', choices=[
+	# 	            	    'LR','SVC','RF'], help='Classifiers')
+	# args = parser.parse_args()
 
+	# available arguments for user to change settings
+	ap = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter,
+								 conflict_handler='resolve')
+	ap.add_argument("-z", "--zoom", default=7, type=int, choices=[7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, 90],
+					help="magnification level of microscope")
+	ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, type=int,
+					help="desired display pixel width of frame")
+	ap.add_argument("-x", "--original_width", default=ORIGINAL_WIDTH, type=int,
+					help="width dimension of original frame in pixels")
+	ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, type=int,
+					help="height dimension of original frame in pixels")
+	ap.add_argument("-r", "--ROI", type=str,
+					help="x, y, w, h of region of interest, each number separated by a space")
+	ap.add_argument("-v", "--vid", default=curVidPath, type=str,
+					help="file path of video")
+	ap.add_argument("-s", "--stop", default="off", choices=["off", "on"],
+					help="if you want the video to stop and wait for a spacebar at every frame")
+	ap.add_argument("-d", "--display_vid", default="on", choices=["off", "on"],
+					help="if you want the video to display as the program runs")
+	ap.add_argument("-f", "--frame_cap", default="off", choices=["off", "on"],
+					help="if you want to save every frame to a folder (helpful for comparing "
+						 "individual frames)")
+	ap.add_argument("-o", "--watch_only", default="off", choices=["off", "on"],
+					help="if you want to only re-watch the video (e.g. to check if the ID numbers "
+						 "change over time), but not save any data")
+
+	args = vars(ap.parse_args())
 
 # sets the global constants for
 # window width and chromatophore pixel diameter based on
@@ -539,21 +571,10 @@ def showAllImages(curFrameIndex, original, gray, threshold, contours, ID_labeled
 	cv2.destroyWindow("IDs + centroids + bounding boxes " + str(curFrameIndex))
 
 
-# saves each generated image individually in the frame_cap folder
-# showing each step of the process for the current frame
-# to use, call at the end of the while True loop in processData()
-def saveIndividualImages(curFrameIndex, original, gray, threshold, contours, ID_labeled):
-	cv2.imwrite("frame_cap/original_" + str(curFrameIndex) + ".png", original)
-	cv2.imwrite("frame_cap/gray_" + str(curFrameIndex) + ".png", gray)
-	cv2.imwrite("frame_cap/thresh_" + str(curFrameIndex) + ".png", threshold)
-	cv2.imwrite("frame_cap/contour_" + str(curFrameIndex) + ".png", contours)
-	cv2.imwrite("frame_cap/ID_labeled_" + str(curFrameIndex) + ".png", ID_labeled)
-
-
 # saves one image that shows each step of the process for the current frame
 # saves to the frame_cap folder
 # to use, call at the end of the while True loop in processData()
-def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled):
+def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled, ROI):
 	# convert 2 channel images (grayscale) into 3 channel images (RGB)
 	gray = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
 	threshold = cv2.cvtColor(threshold, cv2.COLOR_GRAY2RGB)
@@ -565,9 +586,16 @@ def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled):
 	processImg = np.concatenate((processImg, ID_labeled), axis=0)
 
 	vidName = curVidPath.split("/")[-1][:-4]
+	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
+	frameCapDir = curVidPath.replace(curVidPath.split("/")[-1], '') + "/frame_cap_" + vidName + roiString
+
+	# checking if the frame_cap folder exists yet
+	if not os.path.isdir(frameCapDir):
+		# if the frame_cap directory is not present then create it
+		os.makedirs(frameCapDir)
 
 	# save in frame_cap folder
-	cv2.imwrite("frame_cap/" + vidName + "_process_" + str(curFrameIndex) + ".png", processImg)
+	cv2.imwrite(frameCapDir + "/process_" + str(curFrameIndex) + ".png", processImg)
 
 
 # had to make these into global variables to account for windows compatibility
@@ -637,35 +665,47 @@ def processData(vidPath):
 			#showAllImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
 			showIDFrame(curFrameIndex, ID_frame)
 
-		# save generated images to the frame_cap folder
-		saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
+		if args["frame_cap"] == "on":
+			# save generated images to the frame_cap folder
+			saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame,
+					   [ROI_x, ROI_y, ROI_width, ROI_height])
 
 		# add areas of chromatophores from current frame to chromAreas
 		calcCurAreas(centroidsToContours, curFrameIndex)
 
 		curFrameIndex += 1  # update frame index
 
-	# save uncleaned data in a .xls file
-	formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height], cleaned=False)
+	if args["watch_only"] == "off":
+		# save uncleaned data in a .xls file
+		formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height], cleaned=False)
 
-	# filter out irrelevant data entries
-	cleanUpData()
+		# filter out irrelevant data entries
+		cleanUpData()
 
-	# format cleaned dataset and save as a .xls file in video's original directory
-	formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height], cleaned=True)
+		# format cleaned dataset and save as a .xls file in video's original directory
+		formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height], cleaned=True)
 
-	# plot chromatophore areas
-	#plotChromAreas()
+		# plot chromatophore areas
+		#plotChromAreas()
 
-	# close graph display
-	#plt.close()
+		# close graph display
+		#plt.close()
 
 	# close any open windows
 	cv2.destroyAllWindows()
 
 
-# use argument vals if any given, otherwise use default nums
-setGlobalNums()
+def main():
+	parse_args()
 
-# run the program's summary function
-processData(curVidPath)
+	# use argument vals if any given, otherwise use default nums
+	setGlobalNums()
+
+	# run the program's summary function
+	processData(curVidPath)
+
+
+# Using the special variable
+# __name__
+if __name__=="__main__":
+	main()
