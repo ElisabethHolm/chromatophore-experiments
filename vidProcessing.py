@@ -63,7 +63,7 @@ def parse_args():
 	ap.add_argument("-r", "--ROI", type=str,
 					help="x, y, w, h of region of interest, each number separated by a space")
 	ap.add_argument("-v", "--vid", default=curVidPath, widget="FileChooser",
-					help="File path of the video (mp4 accepted)")
+					help="File path of the video (.mp4 and .avi accepted)")
 	ap.add_argument("-s", "--stop", default="off", choices=["off", "on"],
 					help="If you want the video to stop and wait for a space bar at every frame")
 	ap.add_argument("-d", "--display_vid", default="on", choices=["off", "on"],
