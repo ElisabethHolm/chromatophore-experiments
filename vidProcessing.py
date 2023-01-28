@@ -2,7 +2,7 @@
 # Calculates the changing areas of chromatophores from raw video data
 # using computer vision (openCV)
 # Python 3.10.4
-# April 2022 - Sept 2022
+# April 2022 - Present
 
 # so I don't have to type it out every time:
 # cd Downloads/Coding/Chromatophore_Research/dataProcessing
@@ -64,15 +64,15 @@ def parse_args():
 					help="x, y, w, h of region of interest, each number separated by a space")
 	ap.add_argument("-v", "--vid", default=curVidPath, widget="FileChooser",
 					help="File path of the video (mp4 accepted)")
-	ap.add_argument("-s", "--stop", default=False, widget="CheckBox",
+	ap.add_argument("-s", "--stop", default="off", choices=["off", "on"],
 					help="If you want the video to stop and wait for a space bar at every frame")
-	ap.add_argument("-d", "--display_vid", default=True, widget="CheckBox",
+	ap.add_argument("-d", "--display_vid", default="on", choices=["off", "on"],
 					help="If you want the video to display as the program runs")
-	ap.add_argument("-f", "--frame_cap", default=False, widget="CheckBox",
+	ap.add_argument("-f", "--frame_cap", default="off", choices=["off", "on"],
 					help="If you want to save every frame to a folder (in the same location as your "
 						 "video file). Helpful for comparing "
 						 "individual frames")
-	ap.add_argument("-o", "--watch_only", default=False, widget="CheckBox",
+	ap.add_argument("-o", "--watch_only", default="off", choices=["off", "on"],
 					help="If you want to only re-watch the video (e.g. to check if the ID numbers "
 						 "change over time), but not save any data")
 
@@ -534,7 +534,7 @@ def showIDFrame(curFrameIndex, ID_frame):
 	#cv2.moveWindow("ID frame for " + str(curFrameIndex), 10, 10)
 
 	# if the -s flag is raised, wait until the user presses a key to move onto the next frame
-	if args["stop"]:
+	if args["stop"] == "on":
 		cv2.waitKey(0)
 
 	cv2.waitKey(1)
@@ -650,12 +650,12 @@ def processData(vidPath):
 		# draw matched ID numbers and centroids onto original frame
 		ID_frame = drawIDNums(sortedBoundingBoxes, frame.copy())
 
-		if args["display_vid"]:
+		if args["display_vid"] == "on":
 			# show images
 			#showAllImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
 			showIDFrame(curFrameIndex, ID_frame)
 
-		if args["frame_cap"]:
+		if args["frame_cap"] =="on":
 			# save generated images to the frame_cap folder
 			saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame,
 					   [ROI_x, ROI_y, ROI_width, ROI_height])
@@ -665,7 +665,7 @@ def processData(vidPath):
 
 		curFrameIndex += 1  # update frame index
 
-	if not args["watch_only"]:
+	if args["watch_only"] == "off":
 		# save uncleaned data in a .xls file
 		formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height], cleaned=False)
 
