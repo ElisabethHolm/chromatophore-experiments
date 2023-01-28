@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt  # matplotlib 3.5.2
 from xlwt import Workbook  # xlwt 1.3.0
 import math
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser # argparse 1.4.0
-from gooey import Gooey # Gooey 1.0.8.1
+from gooey import Gooey, GooeyParser # Gooey 1.0.8.1
 import os
 
 
@@ -50,40 +50,30 @@ args = []
 @Gooey # The GUI Decorator goes here
 def parse_args():
 	global args
-	# parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter,
-	#                         conflict_handler='resolve')
-	# parser.add_argument('--dim_red_type', default='PCA', choices=[
-	#   		              'PCA','LLE'], help='The dim red. types')
-	# parser.add_argument('--n_comp', default=10, type=int, choices=[
-	#  		                 5,10], help='output dimensions')
-	# parser.add_argument('--classifier', default='LR', choices=[
-	# 	            	    'LR','SVC','RF'], help='Classifiers')
-	# args = parser.parse_args()
-
-	# available arguments for user to change settings
-	ap = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter,
+	ap = GooeyParser(formatter_class=ArgumentDefaultsHelpFormatter,
 								 conflict_handler='resolve')
-	ap.add_argument("-z", "--zoom", default=7, type=int, choices=[7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, 90],
-					help="magnification level of microscope")
+	ap.add_argument("-m", "--magnification", default=7, type=int, choices=[7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, 90],
+					help="Magnification level of microscope when video was filmed")
 	ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, type=int,
-					help="desired display pixel width of frame")
+					help="Desired display pixel width of frame")
 	ap.add_argument("-x", "--original_width", default=ORIGINAL_WIDTH, type=int,
-					help="width dimension of original frame in pixels")
+					help="Width dimension of original frame in pixels")
 	ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, type=int,
-					help="height dimension of original frame in pixels")
+					help="Height dimension of original frame in pixels")
 	ap.add_argument("-r", "--ROI", type=str,
 					help="x, y, w, h of region of interest, each number separated by a space")
-	ap.add_argument("-v", "--vid", default=curVidPath, type=str,
-					help="file path of video")
-	ap.add_argument("-s", "--stop", default="off", choices=["off", "on"],
-					help="if you want the video to stop and wait for a spacebar at every frame")
-	ap.add_argument("-d", "--display_vid", default="on", choices=["off", "on"],
-					help="if you want the video to display as the program runs")
-	ap.add_argument("-f", "--frame_cap", default="off", choices=["off", "on"],
-					help="if you want to save every frame to a folder (helpful for comparing "
-						 "individual frames)")
-	ap.add_argument("-o", "--watch_only", default="off", choices=["off", "on"],
-					help="if you want to only re-watch the video (e.g. to check if the ID numbers "
+	ap.add_argument("-v", "--vid", default=curVidPath, widget="FileChooser",
+					help="File path of the video (mp4 accepted)")
+	ap.add_argument("-s", "--stop", default=False, widget="CheckBox",
+					help="If you want the video to stop and wait for a space bar at every frame")
+	ap.add_argument("-d", "--display_vid", default=True, widget="CheckBox",
+					help="If you want the video to display as the program runs")
+	ap.add_argument("-f", "--frame_cap", default=False, widget="CheckBox",
+					help="If you want to save every frame to a folder (in the same location as your "
+						 "video file). Helpful for comparing "
+						 "individual frames")
+	ap.add_argument("-o", "--watch_only", default=False, widget="CheckBox",
+					help="If you want to only re-watch the video (e.g. to check if the ID numbers "
 						 "change over time), but not save any data")
 
 	args = vars(ap.parse_args())
@@ -103,12 +93,12 @@ def setGlobalNums():
 	WINDOW_WIDTH = int(args["window_width"])
 	ORIGINAL_WIDTH = int(args["original_width"])
 	ORIGINAL_HEIGHT = int(args["original_height"])
-	zoom = float(args["zoom"])
+	magnification = float(args["magnification"])
 	curVidPath = args["vid"]
 
-	# pixels per mm adjusting for zoom, original resolution, and window width
-	# Note: at x50 zoom, number of pixels for 1 mm is 800.353 on 1920x1080 display
-	PIXELS_PER_MM = (800.353 / 1920) * (zoom / 50) * (1920 / ORIGINAL_WIDTH) * WINDOW_WIDTH
+	# pixels per mm adjusting for magnification, original resolution, and window width
+	# Note: at x50 magnification, number of pixels for 1 mm is 800.353 on 1920x1080 display
+	PIXELS_PER_MM = (800.353 / 1920) * (magnification / 50) * (1920 / ORIGINAL_WIDTH) * WINDOW_WIDTH
 
 	# Note: a fully expanded market squid chromatophore is ~1.7 mm in diameter
 	CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 2.5)  # use 2.5 maybe, sometimes connects adjacent ones
@@ -544,7 +534,7 @@ def showIDFrame(curFrameIndex, ID_frame):
 	#cv2.moveWindow("ID frame for " + str(curFrameIndex), 10, 10)
 
 	# if the -s flag is raised, wait until the user presses a key to move onto the next frame
-	if args["stop"] != "off":
+	if args["stop"]:
 		cv2.waitKey(0)
 
 	cv2.waitKey(1)
@@ -660,12 +650,12 @@ def processData(vidPath):
 		# draw matched ID numbers and centroids onto original frame
 		ID_frame = drawIDNums(sortedBoundingBoxes, frame.copy())
 
-		if args["display_vid"] == "on":
+		if args["display_vid"]:
 			# show images
 			#showAllImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
 			showIDFrame(curFrameIndex, ID_frame)
 
-		if args["frame_cap"] == "on":
+		if args["frame_cap"]:
 			# save generated images to the frame_cap folder
 			saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame,
 					   [ROI_x, ROI_y, ROI_width, ROI_height])
@@ -675,7 +665,7 @@ def processData(vidPath):
 
 		curFrameIndex += 1  # update frame index
 
-	if args["watch_only"] == "off":
+	if not args["watch_only"]:
 		# save uncleaned data in a .xls file
 		formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height], cleaned=False)
 
