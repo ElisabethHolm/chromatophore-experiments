@@ -57,11 +57,12 @@ def parse_args():
 	ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, type=int,
 					help="Desired display pixel width of frame")
 	ap.add_argument("-x", "--original_width", default=ORIGINAL_WIDTH, type=int,
-					help="Width dimension of original frame in pixels")
+					help="Width dimension of original video frame in pixels")
 	ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, type=int,
-					help="Height dimension of original frame in pixels")
+					help="Height dimension of original video frame in pixels")
 	ap.add_argument("-r", "--ROI", type=str,
-					help="x, y, w, h of region of interest, each number separated by a space")
+					help="x, y, w, h of region of interest, each number separated by a space. "
+						 "Leave blank to select ROI by drawing a box on the frame.")
 	ap.add_argument("-v", "--vid", default=curVidPath, widget="FileChooser",
 					help="File path of the video (.mp4 and .avi accepted)")
 	ap.add_argument("-s", "--stop", default="off", choices=["off", "on"],
@@ -74,7 +75,7 @@ def parse_args():
 						 "individual frames")
 	ap.add_argument("-o", "--watch_only", default="off", choices=["off", "on"],
 					help="If you want to only re-watch the video (e.g. to check if the ID numbers "
-						 "change over time), but not save any data")
+						 "change over time), but not save any spreadsheet data")
 
 	args = vars(ap.parse_args())
 
@@ -416,8 +417,13 @@ def drawIDNums(boundingRects, frame):
 	return frame
 
 
-# takes in a 1D list of areas, returns the standard deviation
+# takes in a 1D list of areas over time for a specific chromatphore, returns the standard deviation
 def getStdDev(areas):
+	# accounting for "divide by 0" error
+	# if a "chromatophore" is so small that that the computed mm^2 is almost 0
+	if sum(areas) == 0:
+		return 0
+
 	mean = sum(areas)/len(areas)
 	variance = sum((x - mean) ** 2 for x in areas) / sum(areas)
 	stdDev = math.sqrt(variance)
@@ -586,6 +592,7 @@ def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled, R
 
 	# save in frame_cap folder
 	cv2.imwrite(frameCapDir + "/process_" + str(curFrameIndex) + ".png", processImg)
+	print("Saved frame captures to " + frameCapDir)
 
 
 # had to make these into global variables to account for windows compatibility
