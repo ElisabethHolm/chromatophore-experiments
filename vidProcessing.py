@@ -45,6 +45,9 @@ initialCentroids = OrderedDict()  # object ID : centroid when it was first detec
 #curVidPath = "New_Vids/June_22/TS-20220630153941965.avi"  # from June lab visit
 curVidPath = "New_Vids/Sept_2022_Tests/TS-20220801155100769.mp4"
 
+vidName_ext = ""  # video file name (with extension)
+vidName_no_ext = ""  # video file name without extension
+
 args = []
 
 @Gooey # The GUI Decorator goes here
@@ -52,14 +55,6 @@ def parse_args():
 	global args
 	ap = GooeyParser(formatter_class=ArgumentDefaultsHelpFormatter,
 								 conflict_handler='resolve')
-	ap.add_argument("-m", "--magnification", default=7, type=int, choices=[7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, 90],
-					help="Magnification level of microscope when video was filmed")
-	ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, type=int,
-					help="Desired display pixel width of frame")
-	ap.add_argument("-x", "--original_width", default=ORIGINAL_WIDTH, type=int,
-					help="Width dimension of original video frame in pixels")
-	ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, type=int,
-					help="Height dimension of original video frame in pixels")
 	ap.add_argument("-r", "--ROI", type=str,
 					help="x, y, w, h of region of interest, each number separated by a space. "
 						 "Leave blank to select ROI by drawing a box on the frame.")
@@ -76,6 +71,14 @@ def parse_args():
 	ap.add_argument("-o", "--watch_only", default="off", choices=["off", "on"],
 					help="If you want to only re-watch the video (e.g. to check if the ID numbers "
 						 "change over time), but not save any spreadsheet data")
+	ap.add_argument("-m", "--magnification", default=7, type=int, choices=[7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, 90],
+					help="Magnification level of microscope when video was filmed")
+	ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, type=int,
+					help="Desired display pixel width of frame")
+	ap.add_argument("-x", "--original_width", default=ORIGINAL_WIDTH, type=int,
+					help="Width dimension of original video frame in pixels")
+	ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, type=int,
+					help="Height dimension of original video frame in pixels")
 
 	args = vars(ap.parse_args())
 
@@ -90,6 +93,8 @@ def setGlobalNums():
 	global ORIGINAL_HEIGHT
 	global curVidPath
 	global args
+	global vidName_ext
+	global vidName_no_ext
 
 	WINDOW_WIDTH = int(args["window_width"])
 	ORIGINAL_WIDTH = int(args["original_width"])
@@ -97,8 +102,15 @@ def setGlobalNums():
 	magnification = float(args["magnification"])
 	curVidPath = args["vid"]
 
+	# video file name (with extension)
+	vidName_ext = os.path.basename(curVidPath)
+	# video file name without extension
+	vidName_no_ext = os.path.splitext(vidName_ext)[0]
+
 	# pixels per mm adjusting for magnification, original resolution, and window width
 	# Note: at x50 magnification, number of pixels for 1 mm is 800.353 on 1920x1080 display
+	#( 800.353 pixels per mm when at magnification 50) * (ratio of current magnification to mag 50) *
+	# (ratio of current resolution to orignal resolution) * (width we're currently displaying in)
 	PIXELS_PER_MM = (800.353 / 1920) * (magnification / 50) * (1920 / ORIGINAL_WIDTH) * WINDOW_WIDTH
 
 	# Note: a fully expanded market squid chromatophore is ~1.7 mm in diameter
@@ -411,7 +423,7 @@ def drawIDNums(boundingRects, frame):
 		# object on the output frame
 		text = str(ID)
 		cv2.putText(frame, text, (int(centroid[0]) - 5, int(centroid[1]) - 5),
-					cv2.FONT_HERSHEY_DUPLEX, 0.3, (0, 255, 0), 1)
+					cv2.FONT_HERSHEY_DUPLEX, 0.4, (255, 0, 0), 1)
 		cv2.circle(frame, (int(centroid[0]), int(centroid[1])), 2, (0, 255, 0), -1)
 
 	return frame
@@ -467,8 +479,15 @@ def formatData(numFrames, ROI, cleaned):
 	centroidsSheet.write(0, 0, "Centroid (in pixels)")
 	centroidsSheet.write(1, 0, "x")
 	centroidsSheet.write(2, 0, "y")
-	centroidsSheet.write(3, 0, "Pixels per mm:")
-	centroidsSheet.write(3, 1, PIXELS_PER_MM)
+
+	# add some useful sheet/vid-specific info
+	centroidsSheet.write(4, 0, "Video:")
+	centroidsSheet.write(4, 1, curVidPath)
+	centroidsSheet.write(5, 0, "ROI:")
+	centroidsSheet.write(5, 1, str(ROI[0]) + " " + str(ROI[1]) + " " + str(ROI[2]) + " " + str(ROI[3]))
+	centroidsSheet.write(6, 0, "Pixels per mm:")
+	centroidsSheet.write(6, 1, PIXELS_PER_MM)
+
 
 	# add column in column 0 that says each frame number
 	for frame_num in range(numFrames + 1):
@@ -496,10 +515,10 @@ def formatData(numFrames, ROI, cleaned):
 	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
 
 	if cleaned:
-		directory = curVidPath[:-4] + roiString + ".xls"
+		directory = curVidPath.replace(vidName_ext, vidName_no_ext) + roiString + ".xls"
 		wb.save(directory)
 	else:
-		directory = curVidPath[:-4] + roiString + "_uncleaned" + ".xls"
+		directory = curVidPath.replace(vidName_ext, vidName_no_ext) + roiString + "_uncleaned" + ".xls"
 
 	wb.save(directory)
 	print("Saved xls data file to " + directory)
@@ -581,9 +600,8 @@ def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled, R
 	processImg = np.concatenate((processImg, contours), axis=0)
 	processImg = np.concatenate((processImg, ID_labeled), axis=0)
 
-	vidName = curVidPath.split("/")[-1][:-4]
 	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
-	frameCapDir = curVidPath.replace(curVidPath.split("/")[-1], '') + "/frame_cap_" + vidName + roiString
+	frameCapDir = curVidPath.replace(vidName_ext, '') + "frame_cap_" + vidName_no_ext + roiString
 
 	# checking if the frame_cap folder exists yet
 	if not os.path.isdir(frameCapDir):
@@ -592,7 +610,8 @@ def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled, R
 
 	# save in frame_cap folder
 	cv2.imwrite(frameCapDir + "/process_" + str(curFrameIndex) + ".png", processImg)
-	print("Saved frame captures to " + frameCapDir)
+
+	return frameCapDir
 
 
 # had to make these into global variables to account for windows compatibility
@@ -662,15 +681,20 @@ def processData(vidPath):
 			#showAllImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
 			showIDFrame(curFrameIndex, ID_frame)
 
-		if args["frame_cap"] =="on":
+		if args["frame_cap"] == "on":
 			# save generated images to the frame_cap folder
-			saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame,
+			frameCapDir = saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame,
 					   [ROI_x, ROI_y, ROI_width, ROI_height])
 
 		# add areas of chromatophores from current frame to chromAreas
 		calcCurAreas(centroidsToContours, curFrameIndex)
 
 		curFrameIndex += 1  # update frame index
+
+	if args["frame_cap"] == "on":
+		roiString = "_" + str(ROI_x) + "_" + str(ROI_y) + "_" + str(ROI_width) + "_" + str(ROI_height)
+		frameCapDir = curVidPath.replace(vidName_ext, '') + "frame_cap_" + vidName_no_ext + roiString
+		print("Saved the frame captures in " + frameCapDir)
 
 	if args["watch_only"] == "off":
 		# save uncleaned data in a .xls file
