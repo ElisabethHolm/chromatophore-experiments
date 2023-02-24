@@ -71,6 +71,10 @@ def parse_args():
 	ap.add_argument("-o", "--watch_only", default="off", choices=["off", "on"],
 					help="If you want to only re-watch the video (e.g. to check if the ID numbers "
 						 "change over time), but not save any spreadsheet data")
+	ap.add_argument("-p", "--prioritize", default="prevent switching IDs",
+					choices=["prevent switching IDs",
+							 "prevent merging of adjacent chroms"],
+					help="Adjusts parameters of detection to priortize certain features -- IDs (best for well-spaced chromatophores), merging (best if many chroms overlap when expanded)")
 	ap.add_argument("-m", "--magnification", default=7, type=int, choices=[7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, 90],
 					help="Magnification level of microscope when video was filmed")
 	ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, type=int,
@@ -79,6 +83,8 @@ def parse_args():
 					help="Width dimension of original video frame in pixels")
 	ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, type=int,
 					help="Height dimension of original video frame in pixels")
+	ap.add_argument("-i", "--ID_draw_shape", default="contours", choices=["contours", "rotated rectangles"],
+					help="Shape that outlines each chromatophore in the displayed ID frame (does not affect the area calculation)")
 
 	args = vars(ap.parse_args())
 
@@ -114,7 +120,10 @@ def setGlobalNums():
 	PIXELS_PER_MM = (800.353 / 1920) * (magnification / 50) * (1920 / ORIGINAL_WIDTH) * WINDOW_WIDTH
 
 	# Note: a fully expanded market squid chromatophore is ~1.7 mm in diameter
-	CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 2.5)  # use 2.5 maybe, sometimes connects adjacent ones
+	if args["prioritize"] == "prevent switching IDs":
+		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 2.5)  # use 2.5 maybe, sometimes connects adjacent ones
+	elif args["prioritize"] == "prevent merging of adjacent chroms":
+		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 1.3)  # use 2.5 maybe, sometimes connects adjacent ones
 
 	# ensure CHROM_PIXEL_DIAMETER is odd (requirement for param it's passed into)
 	if CHROM_PIXEL_DIAMETER % 2 == 0:
@@ -203,7 +212,7 @@ def drawRotatedRect(rect, img):
 	box = np.int0(box)
 
 	# draw contour of box on image
-	cv2.drawContours(img, [box], 0, (0, 0, 255), 2)
+	cv2.drawContours(img, [box], 0, (0, 0, 255), 1)
 
 	return img
 
@@ -408,14 +417,21 @@ def calcCurAreas(centroidsToContours, curFrameIndex):
 			chromAreas[ID_num][curFrameIndex] = contourArea
 
 
-# draw ID numbers, bounding boxes, and centroids for each object in the frame
+# draw ID numbers, contours or bounding boxes, and centroids for each object in the frame
 # returns frame with everything drawn in it
-def drawIDNums(boundingRects, frame):
+def drawIDNums(shapes, frame):
 	global matchedCentroids
 
-	# draw bounding boxes
-	for box in boundingRects:
-		frame = drawRotatedRect(box, frame)
+	# draw rotated rectangles
+	if args["ID_draw_shape"] == "rotated rectangles":
+		# draw rotated rectangle bounding boxes
+		for box in shapes:
+			frame = drawRotatedRect(box, frame)
+	# draw contours
+	else:
+		# draw contours on ID frame
+		cv2.drawContours(image=frame, contours=shapes, contourIdx=-1, color=(0, 0, 255),
+						 thickness=1)
 
 	# draw centroids and ID nums
 	for ID, centroid in matchedCentroids.items():
@@ -674,7 +690,10 @@ def processData(vidPath):
 			matchCentroids(curCentroids)
 
 		# draw matched ID numbers and centroids onto original frame
-		ID_frame = drawIDNums(sortedBoundingBoxes, frame.copy())
+		if args["ID_draw_shape"] == "rotated rectangles":
+			ID_frame = drawIDNums(sortedBoundingBoxes, frame.copy())
+		else:
+			ID_frame = drawIDNums(contours, frame.copy())
 
 		if args["display_vid"] == "on":
 			# show images
