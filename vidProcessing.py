@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt  # matplotlib 3.5.2
 from xlwt import Workbook  # xlwt 1.3.0
 import math
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser # argparse 1.4.0
-from gooey import Gooey, GooeyParser # Gooey 1.0.8.1
+from gooey import Gooey, GooeyParser  # Gooey 1.0.8.1
 import os
 
 
@@ -112,6 +112,9 @@ def setGlobalNums():
 	vidName_ext = os.path.basename(curVidPath)
 	# video file name without extension
 	vidName_no_ext = os.path.splitext(vidName_ext)[0]
+
+	if os.path.splitext(vidName_ext)[1].lower() not in [".mp4", ".avi"]:
+		raise Exception("Invalid input file. Must be either .mp4 or .avi")
 
 	# pixels per mm adjusting for magnification, original resolution, and window width
 	# Note: at x50 magnification, number of pixels for 1 mm is 800.353 on 1920x1080 display
