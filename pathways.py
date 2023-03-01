@@ -1,83 +1,99 @@
 # Code by Elisabeth Holm
-# Tracks the pathways of activation
+# Analyzes raw area and centroid data, computing
+# variances, neighbors, activation events, etc
 # Python 3.10.4
 # Feb 2023 - Present
 
-import numpy as np  # numpy 1.22.4
 import math
 from collections import OrderedDict
-import xlrd  # xlrd 2.0.1 for reading from xls files
-from xlwt import Workbook  # xlwt 1.3.0, for writing to xls files
-from xlutils.copy import copy  # xlwt 1.3.0
-from xlutils.margins import number_of_good_cols  # xlwt 1.3.0
 import statistics
-from openpyxl.workbook import Workbook as openpyxlWorkbook
+import openpyxl  # openpyxl 3.1.1
+import os  # for checking if it's a .xls or .xlsx file
+import pyexcel as p  # pyexcel 0.7.0, pyexcel-xls 0.7.0, pyexcel-xlsx 0.6.0, for converting .xls to .xlsx
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser # argparse 1.4.0
+from gooey import Gooey, GooeyParser  # Gooey 1.0.8.1
 
 # 367 12 383 456  # ROI gilly chose
 
-#file = "New_Vids/Sept_2022_Tests/TS-20220801155100769_391_61_363_354.xls"  # I chose this ROI, clear pathway, ROI near electrode
+#filepath = "New_Vids/Sept_2022_Tests/TS-20220801155100769_391_61_363_354.xls"  # I chose this ROI, clear pathway, ROI near electrode
 # later: use data from vid 6363 for all chroms going off at once
 # 9896 - clear pathway
-file = "New_Vids/Sept_2022_Tests/TS-20220801155100769_367_12_383_456.xls"
+filepath = "New_Vids/Sept_2022_Tests/TS-20220801155100769_367_12_383_456.xls"
+
+mm_nei_thresh = 3  # threshold distance (in mm) for neighbor # TODO play with thresh dist for neighbor
 
 centroids = OrderedDict()  # dict with key: ID num, value: list [x,y] of its centroid coordinates
 neighborhood = OrderedDict()  # dict with key: ID num, value: set of ID num(s) of its neighbors
+chrom_IDs = []  # list with chrom IDs in order of how they appear on the spreadsheet, populate in main()
+
+wb = 0  # global var, redefine to be workbook in main
+
+args = []
+
+
+@Gooey  # The GUI Decorator goes here
+def parse_args():
+    global args
+
+    ap = GooeyParser(formatter_class=ArgumentDefaultsHelpFormatter,
+                     conflict_handler='resolve')
+
+    ap.add_argument("-s", "--spreadsheet", default=filepath, widget="FileChooser",
+                    help="File path of the spreadsheet (.xls and .xlsx accepted)")
+    ap.add_argument("-n", "--neighbor_radius", default=mm_nei_thresh, type=int,
+                    help="Threshold for distance (in mm) of a neighbor")
+
+    args = vars(ap.parse_args())
+
+
+# set global nums based on args
+def set_global_nums():
+    global filepath
+    global mm_nei_thresh
+
+    filepath = args["spreadsheet"]
+    mm_nei_thresh = args["neighbor_radius"]
 
 
 # converts xls file to xlsx
 def convert_xls_to_xlsx():
-    # open file using xlrd (read-only)
-    xls_wb = xlrd.open_workbook(file)
-    # create a pyxl workbook that we'll copy the data over to
-    pyxl_wb = openpyxlWorkbook()
+    global filepath
 
-    for i in range(xls_wb.nsheets):
-        xlsSheet = xls_wb.sheet_by_index(i)
-        sheet = pyxl_wb.active if i == 0 else pyxl_wb.create_sheet()
-        sheet.title = xlsSheet.name
-
-        for row in range(xlsSheet.nrows):
-            for col in range(xlsSheet.ncols):
-                sheet.cell(row=row + 1, column=col + 1).value = xlsSheet.cell_value(row, col)
-
-
-# Get sheets in the workbook by index
-areas_sheet = xls_wb.sheet_by_index(0)
-centroids_sheet = xls_wb.sheet_by_index(1)
+    p.save_book_as(file_name=filepath,
+                   dest_file_name=filepath + "x")
+    filepath = filepath + "x"
 
 
 # get the centroids from the spreadsheet, populates the centroids dict so we can use that instead
-def extract_centroids():
+def extract_centroids(centroids_sheet):
     global centroids
     global PIXELS_PER_MM
 
     # if using an older spreadsheet that doesn't have this data, use the most common val
     try:
-        PIXELS_PER_MM = float(centroids_sheet.cell_value(6, 2))
+        PIXELS_PER_MM = float(centroids_sheet.cell(10, 2).value)
+        print(PIXELS_PER_MM)
     except:
         PIXELS_PER_MM = 58.3590729166667
 
     # Put the centroid of each chrom into the centroids dictionary
-    for colNumber in range(1, centroids_sheet.ncols):
-        cur_ID = centroids_sheet.cell_value(0, colNumber)  # get ID num of cur chrom
-        #cur_centroid = centroids_sheet.col_values(colNumber)[1:3]  # get [x,y] centroid of cur chrom
-        x = float(centroids_sheet.cell_value(1, colNumber))
-        y = float(centroids_sheet.cell_value(2, colNumber))
+    for colNumber in range(2, centroids_sheet.max_column):
+        cur_ID = centroids_sheet.cell(1, colNumber).value  # get ID num of cur chrom
+
+        # get this chrom's centroid vals
+        x = float(centroids_sheet.cell(2, colNumber).value)
+        y = float(centroids_sheet.cell(3, colNumber).value)
         cur_centroid = [x, y]
 
         centroids[cur_ID] = cur_centroid  # populate centroid dict
         neighborhood[cur_ID] = set()  # prepare neighborhood dict to be filled later
 
 
-extract_centroids()
-
-
 # go through centroids sheet and determine which chroms are adjacent to each other
 # based on a threshold Euclidean distance
 def determine_neighbors():
     global neighborhood
-
-    mm_nei_thresh = 3  # TODO play with thresh dist for neighbor
+    global mm_nei_thresh
 
     ID_nums = list(centroids.keys())
     cents = list(centroids.values())
@@ -91,14 +107,20 @@ def determine_neighbors():
             pn_ID = ID_nums[j]
             pn_centroid = cents[j]
             # if a pn is close enough to the current chrom, count it as a neighbor
-            if ((math.dist(centroid, pn_centroid)/PIXELS_PER_MM) < mm_nei_thresh):
+            if (math.dist(centroid, pn_centroid)/PIXELS_PER_MM) < mm_nei_thresh:
                 # both chroms as neighbors of each other
                 (neighborhood[ID_num]).add(pn_ID)
                 neighborhood[pn_ID].add(ID_num)
 
-    print(neighborhood)
 
-determine_neighbors()
+# filter out any non-numbers from a list of data
+def get_only_nums(full_list):
+    just_nums = []
+    for i in range(len(full_list)):
+        if (type(full_list[i]) == float) or (type(full_list[i]) == int):
+            just_nums.append(full_list[i])
+
+    return just_nums
 
 
 # compute the rolling variance time series for a single chrom
@@ -118,9 +140,8 @@ def compute_var_data(chrom_ID, area_data):
             # take window of data as the previous [window size] points before the ith point
             window_data = area_data[i - rolling_window_size: i - 1]
 
-            # clear out empty strings from window data (that's how empty cells appear)
-            while '' in window_data:
-                window_data.remove('')
+            # get only actual numbers from window data
+            window_data = get_only_nums(window_data)
 
             if len(window_data) > 1:  # check that we have at least 2 data points, compute variance
                 window_var = statistics.variance(window_data)  # rolling variance
@@ -128,17 +149,15 @@ def compute_var_data(chrom_ID, area_data):
             else:  # if the window covers a gap in the data, put the variance as 0
                 window_var = 0
 
-
         var_data[i] = window_var
 
-    #print(var_data)
-    #print()
     return var_data
 
 
-# determine activation time(s) for a single chrom
+# TODO, NOT YET IMPLEMENTED -- might not need to bc of size range method of computing activations
+# determine activation time(s) for a single chrom using the variance time series
 # param: the entire column of variation data (as a dict of frame_num:var)) for that chromatophore
-def find_activations(chrom_ID, var_data):
+def find_activations_via_var(chrom_ID, var_data):
     # iterate through each variance data point
     for frame_num in range(len(var_data.keys())):
         var_pt = var_data[frame_num]
@@ -149,49 +168,11 @@ def find_activations(chrom_ID, var_data):
         # if that avg slope exceeds 500 (or some threshold amount) then that counts as an event
 
 
-# save the variance data to a new sheet in the spreadsheet
-def save_variance_data(all_var_data):
-    # copy the contents of xls file (since we can't really edit an existing spreadsheet,
-    # we have to make a copy, edit that copy, then save that copy)
-    new_workbook = copy(xls_wb)
-    try:
-        varSheet = new_workbook.add_sheet('Variances')
-    except:
-        varSheet = new_workbook.add_sheet('Variances')
-
-    varSheet.write(0, 0, "frame")
-
-    numFrames = len(list(all_var_data.values())[0])
-
-    # add column in column 0 that says each frame number
-    for frame_num in range(numFrames):
-        varSheet.write(frame_num + 1, 0, frame_num)
-
-    curCol = 1
-
-    # iterate through each identified chromatophore
-    for id_num, var_data in all_var_data.items():
-        # add ID num on row 0
-        varSheet.write(0, curCol, id_num)
-
-        # add var time series in each column
-        for frame_num, var in var_data.items():
-            varSheet.write(frame_num + 1, curCol, var)
-
-        curCol += 1
-
-    # save the file (under the same name, thus replacing the unedited file)
-    new_workbook.save(file)
-
-
-# returns active frame #s (frames when chrom is active) and
-# event frame #s (first time a chrom is activated)
-def find_activations_min_max_method(chrom_ID, area_data):
-    just_area_nums = area_data.copy()
-
-    # clear out empty strings from window data (that's how empty cells appear)
-    while '' in just_area_nums:
-        just_area_nums.remove('')
+# returns all active frame #s (frames when chrom is active) and
+# event frame #s (first time a chrom is activated and deactivated)
+# using the % of size range method for finding the activation and deactivation frames
+def find_activations_via_size_range(chrom_ID, area_data):
+    just_area_nums = get_only_nums(area_data)
 
     min_a = min(just_area_nums)
     max_a = max(just_area_nums)
@@ -205,7 +186,7 @@ def find_activations_min_max_method(chrom_ID, area_data):
 
     for i in range(len(area_data)):
         # skip empty spreadsheet cells
-        if area_data[i] == '':
+        if (type(area_data[i]) != float) and (type(area_data[i]) != int):
             # if it loses the chrom, count that as deactivation # TODO check if this is what we want to do
             if i-1 in active_frames:
                 deact_event_frames.append(i)
@@ -222,51 +203,158 @@ def find_activations_min_max_method(chrom_ID, area_data):
                 deact_event_frames.append("active at end of vid")
 
         # if this is a frame when it switches from active to inactive
-        elif (i > 0 and (i-1 in active_frames)):
+        elif i > 0 and (i-1 in active_frames):
             deact_event_frames.append(i)
 
     return active_frames, act_event_frames, deact_event_frames
 
 
-# for every chrom, determine its times of activation -- save in a binary version of the areas sheet
-def make_activation_dataset():
-    all_var_data = {}  # dict with key: chrom ID, value: that chrom's variance time series (a dict)
+# return the data from a column in the sheet as a list
+def get_col_as_list(sheet, col_num):
+    col_data = []
 
-    for colNumber in range(1, areas_sheet.ncols):
-        chrom_col = areas_sheet.col_values(colNumber)  # get column as a list
+    for i in range(1, sheet.max_row + 1):
+        col_data.append(sheet.cell(row=i, column=col_num).value)
+
+    return col_data
+
+
+# for every chrom, determine its variance data and times of activation
+def compute_var_and_activations():
+    all_var_data = OrderedDict() # dict with key: chrom ID, value: that chrom's variance time series (a dict)
+    all_activation_data = OrderedDict() # dict with key: chrom ID, value: [act_event_frames, deact_event_frames]
+    areas_sheet = wb["Areas"]
+
+    for colNumber in range(2, areas_sheet.max_column):
+        chrom_col = get_col_as_list(areas_sheet, colNumber)  # get column as a list
         chrom_ID = chrom_col[0]
 
         var_data = compute_var_data(chrom_ID, chrom_col[1:])  # create var time series for chrom
         all_var_data[chrom_ID] = var_data
 
-        activation_frames = find_activations(chrom_ID, var_data)
+        # TODO not yet implemented -- may not need bc of size_range method
+        #active_frames, act_event_frames, deact_event_frames = find_activations_via_var(chrom_ID, var_data)
 
-        # doing the % size range method
-        active_frames, act_event_frames, deact_event_frames = find_activations_min_max_method(chrom_ID, chrom_col[1:])
-        #print(chrom_ID)
-        #print(active_frames)
-        #print(act_event_frames)
-        #print(deact_event_frames)
-        #print()
+        # using the % of size range method for finding the activation and deactivation frames
+        active_frames, act_event_frames, deact_event_frames = find_activations_via_size_range(chrom_ID, chrom_col[1:])
+        all_activation_data[chrom_ID] = [act_event_frames, deact_event_frames]
 
-    #save_variance_data(all_var_data)
-
-        # TODO make activation dataset from variance versus time dataset
-
-make_activation_dataset()
+    return all_var_data, all_activation_data
 
 
-def save_activation_data():
-    # copy the contents of xls file (since we can't really edit an existing spreadsheet,
-    # we have to make a copy, edit that copy, then save that copy)
-    new_workbook = copy(xls_wb)
+# creates a new sheet in the wb
+# AND deletes the old sheet if there's one of the same name in that wb already
+# returns new sheet
+def create_new_sheet(sheet_name):
+    if sheet_name in wb.sheetnames:
+        del wb[sheet_name]
 
-    activSheet = new_workbook.add_sheet('activation')
+    return wb.create_sheet(sheet_name)
 
-    # TODO populate the new spreadsheet with the activation data
 
-    # save the file
-    new_workbook.save(file)
+# take in a list of neighbors, sort by their chromatophore ID (numerical)
+def sort_neighbors(n_set):
+    neighbors = list(n_set)
+    # separate out just the ID nums, sort them numerically
+    just_nums = []
+    for chrom_ID in neighbors:
+        just_nums.append(int(chrom_ID[1:]))
+    just_nums = sorted(just_nums)
+
+    # add back in the "C" before each ID num, forming the now-sorted list
+    sorted_neighbors = []
+    for ID_num in just_nums:
+        sorted_neighbors.append("C" + str(ID_num))
+
+    return sorted_neighbors
+
+
+def save_neighbors_data():
+    nei_sheet = create_new_sheet('Neighbors')
+
+    nei_sheet.cell(row=1, column=1).value = "Chromatophore ID"
+
+    curRow = 2
+    max_neighbors = 0
+
+    # for every chromatophore, add each of its neighbors to the spreadsheet
+    for chrom_ID, neighbors in neighborhood.items():
+        # add chrom_ID label
+        nei_sheet.cell(row=curRow, column=1).value = chrom_ID
+
+        # add neighbors to sheet
+        neighbors_l = sort_neighbors(neighbors)
+        for i in range(len(neighbors_l)):
+            nei_sheet.cell(row=curRow, column=i + 2).value = neighbors_l[i]
+
+        # keep track of max number of neighbors so we know how many N1, N2,... labels to put
+        if len(neighbors_l) > max_neighbors: max_neighbors = len(neighbors_l)
+
+        curRow += 1
+
+    # add N1, N2,... labels at top
+    for i in range(2, 2 + max_neighbors):
+        nei_sheet.cell(row=1, column=i).value = "N" + str(i-1)
+
+
+# save the variance data to a new sheet in the spreadsheet
+def save_variance_data(all_var_data):
+    varSheet = create_new_sheet('Variances')
+
+    varSheet.cell(row=1, column=1).value = "frame"
+
+    # add column in the first column that says each frame number
+    for i in range(2, wb["Areas"].max_row + 1):
+        varSheet.cell(row=i, column=1).value = i - 2
+
+    curCol = 2
+
+    # iterate through each identified chromatophore
+    for id_num, var_data in all_var_data.items():
+        # add ID num on row 0
+        varSheet.cell(row=1, column=curCol).value = id_num
+
+        # add var time series in each column
+        for frame_num, var in var_data.items():
+            varSheet.cell(row=frame_num + 2, column=curCol).value = var
+
+        curCol += 1
+
+
+# save all activation data to the spreadsheet
+def save_activation_data(all_activation_data):
+    act_sheet = create_new_sheet('Activations')
+
+    act_sheet.cell(row=1, column=1).value = "Chromatophore ID"
+
+    curRow = 2
+    max_events = 0
+    # for every chromatophore, add each of its activations and deactivations to the spreadsheet
+    for chrom_ID, act_data in all_activation_data.items():
+        act_event_frames = act_data[0]
+        deact_event_frames = act_data[1]
+
+        act_sheet.cell(row=curRow, column=1).value = chrom_ID
+
+        # add event data into spreadsheet
+        for i in range(len(act_event_frames)):
+            act_sheet.cell(row=curRow, column=2 + i*3).value = act_event_frames[i]  # activation
+            act_sheet.cell(row=curRow, column=3 + i*3).value = deact_event_frames[i]  # deactivation
+            if type(deact_event_frames[i]) != str:
+                act_sheet.cell(row=curRow, column=4 + i*3).value = deact_event_frames[i] - act_event_frames[i]  # duration of activation
+            else:
+                act_sheet.cell(row=curRow, column=4 + i * 3).value = deact_event_frames[i]  # "active at end of vid" --> duration can't be computed
+
+        # keep track of max number of events so we know how many A1, D1, Dur1,... labels to put
+        if len(act_event_frames) > max_events: max_events = len(act_event_frames)
+
+        curRow += 1
+
+    # add A1, D1, Dur1,... labels at top
+    for i in range(max_events):
+        act_sheet.cell(row=1, column=2 + i*3).value = "A" + str(i+1)  # activation
+        act_sheet.cell(row=1, column=3 + i*3).value = "D" + str(i+1)  # deactivation
+        act_sheet.cell(row=1, column=4 + i*3).value = "Dur" + str(i+1)  # duration
 
 
 #def identify_pathways():
@@ -274,6 +362,51 @@ def save_activation_data():
 
 #def predict_independence():
     #print("bat time")
+
+
+def main():
+    global wb
+    global chrom_IDs
+
+    # adjust for user-selected options
+    parse_args()
+
+    file_ext = os.path.splitext(filepath)[1]
+
+    # convert .xls to .xlsx (so we can use openpyxl) if the input file is .xls
+    if file_ext == ".xls":
+        convert_xls_to_xlsx()
+    elif file_ext != ".xlsx":
+        raise Exception("Invalid input file. Must be either .xls or .xlsx")
+
+    # load workbook
+    wb = openpyxl.load_workbook(filepath)
+
+    # get all chrom IDs in order, save to chrom_IDs
+    for cell in wb["Areas"][1]:
+        if cell != wb["Areas"].cell(1, 1):
+            chrom_IDs.append(cell.value)
+
+    # extract data from centroids sheet, populate centroids dict
+    extract_centroids(wb["Centroids"])
+
+    # determine which chroms are neighbors with which, populate neighborhood dict
+    determine_neighbors()
+    # save neighbors data
+    save_neighbors_data()
+
+    # compute variance and activation data, then save to the spreadsheet
+    all_var_data, all_activation_data = compute_var_and_activations()
+    save_variance_data(all_var_data)
+    save_activation_data(all_activation_data)
+
+    # save the file (under the same name, thus replacing the unedited file)
+    wb.save(filepath)
+
+    print("Saved updated spreadsheet to " + filepath)
+
+if __name__ == "__main__":
+    main()
 
 '''
 reader = csv.DictReader(open('bats.csv'))
