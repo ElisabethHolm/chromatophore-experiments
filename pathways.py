@@ -371,6 +371,8 @@ def main():
     # adjust for user-selected options
     parse_args()
 
+    set_global_nums()
+
     file_ext = os.path.splitext(filepath)[1]
 
     # convert .xls to .xlsx (so we can use openpyxl) if the input file is .xls
