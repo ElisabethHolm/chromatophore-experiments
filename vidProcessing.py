@@ -64,7 +64,7 @@ def parse_args():
 					help="If you want the video to stop and wait for a space bar at every frame")
 	ap.add_argument("-d", "--display_vid", default="on", choices=["off", "on"],
 					help="If you want the video to display as the program runs")
-	ap.add_argument("-f", "--frame_cap", default="off", choices=["off", "on"],
+	ap.add_argument("-f", "--frame_cap", default="off", choices=["off", "on, save ID frame", "on, save entire process"],
 					help="If you want to save every frame to a folder (in the same location as your "
 						 "video file). Helpful for comparing "
 						 "individual frames")
@@ -422,7 +422,7 @@ def calcCurAreas(centroidsToContours, curFrameIndex):
 
 # draw ID numbers, contours or bounding boxes, and centroids for each object in the frame
 # returns frame with everything drawn in it
-def drawIDNums(shapes, frame):
+def drawIDNums(shapes, frame, ROI):
 	global matchedCentroids
 
 	# draw rotated rectangles
@@ -441,8 +441,20 @@ def drawIDNums(shapes, frame):
 		# draw both the ID of the object and the centroid of the
 		# object on the output frame
 		text = str(ID)
-		cv2.putText(frame, text, (int(centroid[0]) - 5, int(centroid[1]) - 5),
-					cv2.FONT_HERSHEY_DUPLEX, 0.4, (255, 0, 0), 1)
+		# offset numbers when a chromatophore is too close to the edges
+		if centroid[0] > (ROI[2] - 10):  # too close to right
+			text_x = int(centroid[0]) - 10
+		elif centroid[0] < 10:  # too close to left
+			text_x = int(centroid[0]) + 5
+		else:
+			text_x = int(centroid[0]) - 5
+		if centroid[1] < 7:  # too close to top
+			text_y = int(centroid[1]) + 5
+		else:
+			text_y = int(centroid[1]) - 5
+
+		cv2.putText(frame, text, (text_x, text_y),
+						cv2.FONT_HERSHEY_DUPLEX, 0.4, (255, 0, 0), 1)
 		cv2.circle(frame, (int(centroid[0]), int(centroid[1])), 2, (0, 255, 0), -1)
 
 	return frame
@@ -605,10 +617,26 @@ def showAllImages(curFrameIndex, original, gray, threshold, contours, ID_labeled
 	cv2.destroyWindow("IDs + centroids + bounding boxes " + str(curFrameIndex))
 
 
+# save image to frame_cap folder
+def saveToFrameCap(ROI, curFrameIndex, img):
+	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
+	frameCapDir = curVidPath.replace(vidName_ext, '') + "frame_cap_" + vidName_no_ext + roiString
+
+	# checking if the frame_cap folder exists yet
+	if not os.path.isdir(frameCapDir):
+		# if the frame_cap directory is not present then create it
+		os.makedirs(frameCapDir)
+
+	# save in frame_cap folder
+	cv2.imwrite(frameCapDir + "/process_" + str(curFrameIndex) + ".png", img)
+
+	return frameCapDir
+
+
 # saves one image that shows each step of the process for the current frame
 # saves to the frame_cap folder
 # to use, call at the end of the while True loop in processData()
-def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled, ROI):
+def saveProcessImage(curFrameIndex, original, gray, threshold, contours, ID_labeled, ROI):
 	# convert 2 channel images (grayscale) into 3 channel images (RGB)
 	gray = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
 	threshold = cv2.cvtColor(threshold, cv2.COLOR_GRAY2RGB)
@@ -619,16 +647,7 @@ def saveImages(curFrameIndex, original, gray, threshold, contours, ID_labeled, R
 	processImg = np.concatenate((processImg, contours), axis=0)
 	processImg = np.concatenate((processImg, ID_labeled), axis=0)
 
-	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
-	frameCapDir = curVidPath.replace(vidName_ext, '') + "frame_cap_" + vidName_no_ext + roiString
-
-	# checking if the frame_cap folder exists yet
-	if not os.path.isdir(frameCapDir):
-		# if the frame_cap directory is not present then create it
-		os.makedirs(frameCapDir)
-
-	# save in frame_cap folder
-	cv2.imwrite(frameCapDir + "/process_" + str(curFrameIndex) + ".png", processImg)
+	frameCapDir = saveToFrameCap(ROI, curFrameIndex, processImg)
 
 	return frameCapDir
 
@@ -669,6 +688,7 @@ def processData(vidPath):
 		# note: x and y coordinates are of top left corner of ROI
 		if curFrameIndex == 0:
 			ROI_x, ROI_y, ROI_width, ROI_height = getROI(frame)
+			ROI = [ROI_x, ROI_y, ROI_width, ROI_height]
 
 		# resize the frame to only include the ROI
 		frame = frame[ROI_y:ROI_y + ROI_height, ROI_x: ROI_x + ROI_width]
@@ -694,39 +714,41 @@ def processData(vidPath):
 
 		# draw matched ID numbers and centroids onto original frame
 		if args["ID_draw_shape"] == "rotated rectangles":
-			ID_frame = drawIDNums(sortedBoundingBoxes, frame.copy())
+			ID_frame = drawIDNums(sortedBoundingBoxes, frame.copy(), ROI)
 		else:
-			ID_frame = drawIDNums(contours, frame.copy())
+			ID_frame = drawIDNums(contours, frame.copy(), ROI)
 
 		if args["display_vid"] == "on":
 			# show images
 			#showAllImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame)
 			showIDFrame(curFrameIndex, ID_frame)
 
-		if args["frame_cap"] == "on":
-			# save generated images to the frame_cap folder
-			frameCapDir = saveImages(curFrameIndex, frame, gray_frame, thresh_frame, contour_frame, ID_frame,
-					   [ROI_x, ROI_y, ROI_width, ROI_height])
+		# save generated image(s) to the frame_cap folder
+		if args["frame_cap"] == "on, save entire process":
+			frameCapDir = saveProcessImage(curFrameIndex, frame, gray_frame, thresh_frame,
+										   contour_frame, ID_frame, ROI)
+		elif args["frame_cap"] == "on, save ID frame":
+			frameCapDir = saveToFrameCap(ROI, curFrameIndex, ID_frame)
 
 		# add areas of chromatophores from current frame to chromAreas
 		calcCurAreas(centroidsToContours, curFrameIndex)
 
 		curFrameIndex += 1  # update frame index
 
-	if args["frame_cap"] == "on":
+	if args["frame_cap"] != "off":
 		roiString = "_" + str(ROI_x) + "_" + str(ROI_y) + "_" + str(ROI_width) + "_" + str(ROI_height)
 		frameCapDir = curVidPath.replace(vidName_ext, '') + "frame_cap_" + vidName_no_ext + roiString
 		print("Saved the frame captures in " + frameCapDir)
 
 	if args["watch_only"] == "off":
 		# save uncleaned data in a .xls file
-		formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height], cleaned=False)
+		formatData(curFrameIndex - 1, ROI, cleaned=False)
 
 		# filter out irrelevant data entries
 		cleanUpData()
 
 		# format cleaned dataset and save as a .xls file in video's original directory
-		formatData(curFrameIndex - 1, [ROI_x, ROI_y, ROI_width, ROI_height], cleaned=True)
+		formatData(curFrameIndex - 1, ROI, cleaned=True)
 
 		# plot chromatophore areas
 		#plotChromAreas()
