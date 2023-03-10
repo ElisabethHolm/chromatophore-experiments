@@ -75,7 +75,9 @@ def parse_args():
 					choices=["prevent switching IDs",
 							 "prevent merging of adjacent chroms"],
 					help="Adjusts parameters of detection to priortize certain features -- IDs (best for well-spaced chromatophores), merging (best if many chroms overlap when expanded)")
-	ap.add_argument("-m", "--magnification", default=7, type=int, choices=[7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, 90],
+	ap.add_argument("-c", "--save_ROI_context_img", default="on", choices=["off", "on"],
+					help="Save the image that shows where the ROI is in the uncropped frame")
+	ap.add_argument("-m", "--magnification", default=7, type=float, choices=[7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, 90],
 					help="Magnification level of microscope when video was filmed")
 	ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, type=int,
 					help="Desired display pixel width of frame")
@@ -656,6 +658,22 @@ def saveProcessImage(curFrameIndex, original, gray, threshold, contours, ID_labe
 ROI_x, ROI_y, ROI_width, ROI_height = 0, 0, ORIGINAL_WIDTH, ORIGINAL_HEIGHT
 
 
+# save context image to show where the ROI is in the full frame
+def saveRoiContextImg(ROI, full_frame):
+	rect_top_left = (ROI_x, ROI_y)
+	rect_bottom_right = (ROI_x + ROI_width, ROI_y + ROI_height)
+	cv2.rectangle(full_frame, rect_top_left, rect_bottom_right, (0, 0, 255), 2)
+
+	# TODO put ID num frame on top of context frame so you can see all ID nums
+
+	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
+	directory = curVidPath.replace(vidName_ext, vidName_no_ext) + roiString + "_ROI_context.png"
+
+	# save in frame_cap folder
+	cv2.imwrite(directory, full_frame)
+	print("Saved ROI context image to " + directory)
+
+
 # summary function of entire program
 # takes in filepath to raw video, goes through entire identification process,
 # and saves the time series of each chromatophores' change in area as
@@ -689,6 +707,9 @@ def processData(vidPath):
 		if curFrameIndex == 0:
 			ROI_x, ROI_y, ROI_width, ROI_height = getROI(frame)
 			ROI = [ROI_x, ROI_y, ROI_width, ROI_height]
+
+			if args['save_ROI_context_img'] == "on":
+				saveRoiContextImg(ROI, frame)
 
 		# resize the frame to only include the ROI
 		frame = frame[ROI_y:ROI_y + ROI_height, ROI_x: ROI_x + ROI_width]
