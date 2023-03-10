@@ -228,12 +228,12 @@ def find_activations_via_deriv(chrom_ID, area_data):
     #print(frames_np)
     deriv = dxdt(area_data_np, frames_np, kind="finite_difference", k=1)
     # plot deriv and area data -- TODO take out once func fully tested
-    if chrom_ID == "C16":
-        import matplotlib.pyplot as plt
-        plt.plot(frames_np, deriv, label="deriv", marker='o', markersize=3)
-        plt.plot(frames_np, filled_area_data, label="areas", marker='o', markersize=3)
-        plt.legend()
-        plt.show()
+    # if chrom_ID == "C16":
+    #     import matplotlib.pyplot as plt
+    #     plt.plot(frames_np, deriv, label="deriv", marker='o', markersize=3)
+    #     plt.plot(frames_np, filled_area_data, label="areas", marker='o', markersize=3)
+    #     plt.legend()
+    #     plt.show()
 
 
     active_frames = []
