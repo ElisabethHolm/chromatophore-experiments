@@ -12,6 +12,8 @@ import os  # for checking if it's a .xls or .xlsx file
 import pyexcel as p  # pyexcel 0.7.0, pyexcel-xls 0.7.0, pyexcel-xlsx 0.6.0, for converting .xls to .xlsx
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser # argparse 1.4.0
 from gooey import Gooey, GooeyParser  # Gooey 1.0.8.1
+from derivative import dxdt
+import numpy as np
 
 # 367 12 383 456  # ROI gilly chose
 
@@ -40,8 +42,13 @@ def parse_args():
 
     ap.add_argument("-s", "--spreadsheet", default=filepath, widget="FileChooser",
                     help="File path of the spreadsheet (.xls and .xlsx accepted)")
-    ap.add_argument("-n", "--neighbor_radius", default=mm_nei_thresh, type=int,
+    ap.add_argument("-n", "--neighbor_radius", default=mm_nei_thresh, type=float,
                     help="Threshold for distance (in mm) of a neighbor")
+    ap.add_argument("-a", "--act_deriv_thresh", default=0.0035, type=float,
+                    help="Threshold value (of derivative of areas) for activation")
+    # TODO find deact thresh val and set here
+    ap.add_argument("-d", "--deact_deriv_thresh", default=-0.0035, type=float,
+                    help="Threshold value (of derivative of areas) for activation")
 
     args = vars(ap.parse_args())
 
@@ -114,13 +121,16 @@ def determine_neighbors():
 
 
 # filter out any non-numbers from a list of data
+# return a list of just the numerical data, and a list of which frames those data points came from
 def get_only_nums(full_list):
     just_nums = []
+    corresponding_frames = []
     for i in range(len(full_list)):
         if (type(full_list[i]) == float) or (type(full_list[i]) == int):
             just_nums.append(full_list[i])
+            corresponding_frames.append(i)
 
-    return just_nums
+    return just_nums, corresponding_frames
 
 
 # compute the rolling variance time series for a single chrom
@@ -141,7 +151,7 @@ def compute_var_data(chrom_ID, area_data):
             window_data = area_data[i - rolling_window_size: i - 1]
 
             # get only actual numbers from window data
-            window_data = get_only_nums(window_data)
+            window_data, corresponding_frames = get_only_nums(window_data)
 
             if len(window_data) > 1:  # check that we have at least 2 data points, compute variance
                 window_var = statistics.variance(window_data)  # rolling variance
@@ -162,20 +172,103 @@ def find_activations_via_var(chrom_ID, var_data):
     for frame_num in range(len(var_data.keys())):
         var_pt = var_data[frame_num]
 
-        # TODO
+        # TODO?
         # take avg slope between prev 3 data points -- testing frame 4, we'd avg slopes between
         # 1/2 2/3 3/4
         # if that avg slope exceeds 500 (or some threshold amount) then that counts as an event
+
+
+# fill in gaps in data (essentially drawing a straight line between points across the gaps
+def fill_in_data_gaps(data):
+    filled_data = data.copy()
+    just_nums, just_nums_frames = get_only_nums(data)
+    start_gap_i = 0  # first frame without a num
+    end_gap_i = 0  # last name without a num
+
+    # iterate through all the actual numerical data
+    for i in range(len(just_nums_frames)):
+        # if this is the first one in the just_nums_frames list
+        if i == 0:
+            # if there is a gap that at the start of the data, hold the first real num constant
+            if just_nums_frames[i] != 0:
+                for j in range(just_nums_frames[i]):
+                    filled_data[j] = just_nums[i + 1]
+
+        # if this is the last one in the just_num_frames list
+        elif i == len(just_nums_frames) - 1:
+            # if there is a gap that lasts until the end of the vid, hold the last real num constant
+            if just_nums_frames[i] != len(data) - 1:
+                for j in range(just_nums_frames[i], len(data)):
+                    filled_data[j] = just_nums[i]
+        else:
+            cur_existing_f = just_nums_frames[i]  # existing frame num
+            next_existing_f = just_nums_frames[i + 1]  # existing frame num
+
+            # if there is a gap that starts at the cur existing frame
+            if cur_existing_f + 1 != next_existing_f:
+                # calculate number of blank frames (between the two existing frames)
+                num_blank_frames = next_existing_f - cur_existing_f - 1
+                # create filler datapoints (note: endpoints = actual data)
+                filler_points = np.linspace(data[cur_existing_f], data[next_existing_f], num=num_blank_frames + 2)
+                # fill in missing data in data array
+                for j in range(cur_existing_f, next_existing_f + 1):
+                    filled_data[j] = filler_points.item(j - cur_existing_f)
+
+    return filled_data
+
+
+# returns all active frame #s (frames when chrom is active) and
+# event frame #s (first time a chrom is activated and deactivated)
+# using the derivative method for finding the activation and deactivation frames
+def find_activations_via_deriv(chrom_ID, area_data):
+    filled_area_data = fill_in_data_gaps(area_data)
+    area_data_np = np.array(filled_area_data)
+    frames_np = np.array(range(len(area_data)))
+    #print(area_data_np)
+    #print(frames_np)
+    deriv = dxdt(area_data_np, frames_np, kind="finite_difference", k=1)
+    # plot deriv and area data -- TODO take out once func fully tested
+    if chrom_ID == "C16":
+        import matplotlib.pyplot as plt
+        plt.plot(frames_np, deriv, label="deriv", marker='o', markersize=3)
+        plt.plot(frames_np, filled_area_data, label="areas", marker='o', markersize=3)
+        plt.legend()
+        plt.show()
+
+
+    active_frames = []
+    act_event_frames = []
+    deact_event_frames = []
+
+    act_deriv_thresh = args['act_deriv_thresh']
+    deact_deriv_thresh = args['deact_deriv_thresh']
+
+    for i in range(len(deriv)):
+        # if chrom is active in this frame
+        if deriv[i] >= act_deriv_thresh or deriv[i] <= deact_deriv_thresh:
+            active_frames.append(i)
+            # if this is a frame when it switches from inactive to active
+            if (i > 0 and (i-1 not in active_frames)) or i == 0:
+                act_event_frames.append(i)
+            # if it's still active
+            if i == len(area_data) - 1:
+                deact_event_frames.append("active at end of vid")
+
+        # if this is a frame when it switches from active to inactive
+        elif i > 0 and (i-1 in active_frames):
+            deact_event_frames.append(i)
+
+    return active_frames, act_event_frames, deact_event_frames
 
 
 # returns all active frame #s (frames when chrom is active) and
 # event frame #s (first time a chrom is activated and deactivated)
 # using the % of size range method for finding the activation and deactivation frames
 def find_activations_via_size_range(chrom_ID, area_data):
-    just_area_nums = get_only_nums(area_data)
+    just_nums, just_nums_frames = get_only_nums(area_data)
 
-    min_a = min(just_area_nums)
-    max_a = max(just_area_nums)
+    min_a = min(just_nums)
+    max_a = max(just_nums_frames)
     size_range = max_a - min_a
     percent_active_thresh = .05  # once chrom has reached this percent of its size range, count as active
     thresh_area = size_range * percent_active_thresh
@@ -232,11 +325,13 @@ def compute_var_and_activations():
         var_data = compute_var_data(chrom_ID, chrom_col[1:])  # create var time series for chrom
         all_var_data[chrom_ID] = var_data
 
-        # TODO not yet implemented -- may not need bc of size_range method
+        # TODO not yet implemented -- may not need bc of deriv and size_range method
         #active_frames, act_event_frames, deact_event_frames = find_activations_via_var(chrom_ID, var_data)
 
+        active_frames, act_event_frames, deact_event_frames = find_activations_via_deriv(chrom_ID, chrom_col[1:])
+
         # using the % of size range method for finding the activation and deactivation frames
-        active_frames, act_event_frames, deact_event_frames = find_activations_via_size_range(chrom_ID, chrom_col[1:])
+        #active_frames, act_event_frames, deact_event_frames = find_activations_via_size_range(chrom_ID, chrom_col[1:])
         all_activation_data[chrom_ID] = [act_event_frames, deact_event_frames]
 
     return all_var_data, all_activation_data
