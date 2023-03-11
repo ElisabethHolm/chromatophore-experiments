@@ -126,6 +126,7 @@ def get_only_nums(full_list):
     just_nums = []
     corresponding_frames = []
     for i in range(len(full_list)):
+        # if it's an actual data point
         if (type(full_list[i]) == float) or (type(full_list[i]) == int):
             just_nums.append(full_list[i])
             corresponding_frames.append(i)
@@ -164,7 +165,7 @@ def compute_var_data(chrom_ID, area_data):
     return var_data
 
 
-# TODO, NOT YET IMPLEMENTED -- might not need to bc of size range method of computing activations
+# TODO? -- might not need to bc of size range method of computing activations
 # determine activation time(s) for a single chrom using the variance time series
 # param: the entire column of variation data (as a dict of frame_num:var)) for that chromatophore
 def find_activations_via_var(chrom_ID, var_data):
@@ -178,7 +179,7 @@ def find_activations_via_var(chrom_ID, var_data):
         # if that avg slope exceeds 500 (or some threshold amount) then that counts as an event
 
 
-# fill in gaps in data (essentially drawing a straight line between points across the gaps
+# fill in gaps in data (essentially drawing a straight line between points across the gaps)
 def fill_in_data_gaps(data):
     filled_data = data.copy()
     just_nums, just_nums_frames = get_only_nums(data)
@@ -217,6 +218,15 @@ def fill_in_data_gaps(data):
     return filled_data
 
 
+# return true if slope is pos between two points, false if negative slope
+def has_pos_slope(pt1, pt2):
+    slope = (pt2[1] - pt1[1]) / (pt2[0] - pt1[0])
+    if slope < 0:  # if slope negative
+        return False, slope
+    else:  # if slope positive
+        return True, slope
+
+
 # returns all active frame #s (frames when chrom is active) and
 # event frame #s (first time a chrom is activated and deactivated)
 # using the derivative method for finding the activation and deactivation frames
@@ -224,19 +234,17 @@ def find_activations_via_deriv(chrom_ID, area_data):
     filled_area_data = fill_in_data_gaps(area_data)
     area_data_np = np.array(filled_area_data)
     frames_np = np.array(range(len(area_data)))
-    #print(area_data_np)
-    #print(frames_np)
     deriv = dxdt(area_data_np, frames_np, kind="finite_difference", k=1)
-    # plot deriv and area data -- TODO take out once func fully tested
-    # if chrom_ID == "C16":
+    # # plot deriv and area data -- TODO take out once func fully tested
+    # if chrom_ID in ["C16", "C67", "C141"]:
     #     import matplotlib.pyplot as plt
-    #     plt.plot(frames_np, deriv, label="deriv", marker='o', markersize=3)
-    #     plt.plot(frames_np, filled_area_data, label="areas", marker='o', markersize=3)
+    #     #for i, deriv_val in enumerate(deriv):
+    #         #print(i, deriv_val)
+    #     plt.plot(frames_np, deriv, label="deriv" + str(chrom_ID), marker='o', markersize=3)
+    #     plt.plot(frames_np, filled_area_data, label="areas" + str(chrom_ID), marker='o', markersize=3)
     #     plt.legend()
     #     plt.show()
 
-
-    active_frames = []
     act_event_frames = []
     deact_event_frames = []
 
@@ -244,21 +252,43 @@ def find_activations_via_deriv(chrom_ID, area_data):
     deact_deriv_thresh = args['deact_deriv_thresh']
 
     for i in range(len(deriv)):
-        # if chrom is active in this frame
-        if deriv[i] >= act_deriv_thresh or deriv[i] <= deact_deriv_thresh:
-            active_frames.append(i)
-            # if this is a frame when it switches from inactive to active
-            if (i > 0 and (i-1 not in active_frames)) or i == 0:
-                act_event_frames.append(i)
-            # if it's still active
-            if i == len(area_data) - 1:
-                deact_event_frames.append("active at end of vid")
+        if i == len(deriv) - 1:
+            pos_slope, slope = has_pos_slope((i - 1, deriv[i - 1]), (i, deriv[i]))
+        else:
+            pos_slope, slope = has_pos_slope((i, deriv[i]), (i + 1, deriv[i + 1]))
 
-        # if this is a frame when it switches from active to inactive
-        elif i > 0 and (i-1 in active_frames):
+        # if there is an activation event
+        if deriv[i] >= act_deriv_thresh and pos_slope and len(deact_event_frames) == len(act_event_frames):
+            act_event_frames.append(i)
+
+        # if there is a deactivation event
+        if deriv[i] <= deact_deriv_thresh and pos_slope and len(deact_event_frames) < len(act_event_frames):
             deact_event_frames.append(i)
 
-    return active_frames, act_event_frames, deact_event_frames
+        # if still active at end of video
+        if i == len(area_data) - 1 and len(deact_event_frames) < len(act_event_frames):
+            deact_event_frames.append("active at end of vid")
+
+        # # if chrom activates in this frame (above thresh and pos slope of deriv)
+        # if deriv[i] >= act_deriv_thresh and (i == 0 or i-1 not in act_event_frames):
+        #     # if it's the last frame, check deriv slope w prev point
+        #     if i == len(area_data) - 1:
+        #         # if slope of deriv line pos
+        #         if pos_slope((i - 1, deriv[i - 1]), (i, deriv[i])):
+        #             act_event_frames.append(i)
+        #     # if slope of deriv line pos
+        #     elif pos_slope((i, deriv[i]), (i + 1, deriv[i + 1])):
+        #         act_event_frames.append(i)
+        #     # if active at end of video
+        #     if i == len(area_data) - 1:
+        #         if len(deact_event_frames) < len(act_event_frames):
+        #             deact_event_frames.append("active at end of vid")
+        # # if chrom deactivates in this frame (below thresh and pos slope of deriv)
+        # elif deriv[i] <= deact_deriv_thresh and pos_slope((i, deriv[i]), (i + 1, deriv[i + 1])) \
+        #         and i-1 not in deact_event_frames:
+        #     act_event_frames.append(i)
+
+    return act_event_frames, deact_event_frames
 
 
 # returns all active frame #s (frames when chrom is active) and
@@ -328,7 +358,7 @@ def compute_var_and_activations():
         # TODO not yet implemented -- may not need bc of deriv and size_range method
         #active_frames, act_event_frames, deact_event_frames = find_activations_via_var(chrom_ID, var_data)
 
-        active_frames, act_event_frames, deact_event_frames = find_activations_via_deriv(chrom_ID, chrom_col[1:])
+        act_event_frames, deact_event_frames = find_activations_via_deriv(chrom_ID, chrom_col[1:])
 
         # using the % of size range method for finding the activation and deactivation frames
         #active_frames, act_event_frames, deact_event_frames = find_activations_via_size_range(chrom_ID, chrom_col[1:])
