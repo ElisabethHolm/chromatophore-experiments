@@ -269,25 +269,6 @@ def find_activations_via_deriv(chrom_ID, area_data):
         if i == len(area_data) - 1 and len(deact_event_frames) < len(act_event_frames):
             deact_event_frames.append("active at end of vid")
 
-        # # if chrom activates in this frame (above thresh and pos slope of deriv)
-        # if deriv[i] >= act_deriv_thresh and (i == 0 or i-1 not in act_event_frames):
-        #     # if it's the last frame, check deriv slope w prev point
-        #     if i == len(area_data) - 1:
-        #         # if slope of deriv line pos
-        #         if pos_slope((i - 1, deriv[i - 1]), (i, deriv[i])):
-        #             act_event_frames.append(i)
-        #     # if slope of deriv line pos
-        #     elif pos_slope((i, deriv[i]), (i + 1, deriv[i + 1])):
-        #         act_event_frames.append(i)
-        #     # if active at end of video
-        #     if i == len(area_data) - 1:
-        #         if len(deact_event_frames) < len(act_event_frames):
-        #             deact_event_frames.append("active at end of vid")
-        # # if chrom deactivates in this frame (below thresh and pos slope of deriv)
-        # elif deriv[i] <= deact_deriv_thresh and pos_slope((i, deriv[i]), (i + 1, deriv[i + 1])) \
-        #         and i-1 not in deact_event_frames:
-        #     act_event_frames.append(i)
-
     return act_event_frames, deact_event_frames
 
 
@@ -356,8 +337,10 @@ def compute_var_and_activations():
         all_var_data[chrom_ID] = var_data
 
         # TODO not yet implemented -- may not need bc of deriv and size_range method
+        # using the variance method for finding the activation and deactivation frames
         #active_frames, act_event_frames, deact_event_frames = find_activations_via_var(chrom_ID, var_data)
 
+        # using the derivative method for finding the activation and deactivation frames
         act_event_frames, deact_event_frames = find_activations_via_deriv(chrom_ID, chrom_col[1:])
 
         # using the % of size range method for finding the activation and deactivation frames
