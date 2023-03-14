@@ -444,10 +444,10 @@ def drawIDNums(shapes, frame, ROI):
 		# object on the output frame
 		text = str(ID)
 		# offset numbers when a chromatophore is too close to the edges
-		if centroid[0] > (ROI[2] - 10):  # too close to right
-			text_x = int(centroid[0]) - 10
-		elif centroid[0] < 10:  # too close to left
-			text_x = int(centroid[0]) + 5
+		if centroid[0] > (ROI[2] - 17):  # too close to right
+			text_x = int(centroid[0]) - 20
+		elif centroid[0] < 7:  # too close to left
+			text_x = int(centroid[0]) + 7
 		else:
 			text_x = int(centroid[0]) - 5
 		if centroid[1] < 7:  # too close to top
@@ -709,7 +709,7 @@ def processData(vidPath):
 			ROI = [ROI_x, ROI_y, ROI_width, ROI_height]
 
 			if args['save_ROI_context_img'] == "on":
-				saveRoiContextImg(ROI, frame)
+				saveRoiContextImg(ROI, frame.copy())
 
 		# resize the frame to only include the ROI
 		frame = frame[ROI_y:ROI_y + ROI_height, ROI_x: ROI_x + ROI_width]
