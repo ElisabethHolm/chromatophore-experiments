@@ -180,30 +180,32 @@ def find_activations_via_var(chrom_ID, var_data):
 
 
 # fill in gaps in data (essentially drawing a straight line between points across the gaps)
+# takes in a list with area data (and None where no real data)
+# returns list of same size, but with data interpolated
 def fill_in_data_gaps(data):
     filled_data = data.copy()
     just_nums, just_nums_frames = get_only_nums(data)
-    start_gap_i = 0  # first frame without a num
-    end_gap_i = 0  # last name without a num
 
     # iterate through all the actual numerical data
     for i in range(len(just_nums_frames)):
         # if this is the first one in the just_nums_frames list
-        if i == 0:
-            # if there is a gap that at the start of the data, hold the first real num constant
-            if just_nums_frames[i] != 0:
-                for j in range(just_nums_frames[i]):
-                    filled_data[j] = just_nums[i + 1]
+        # and there is a gap that at the start of the data, hold the first real num constant
+        if i == 0 and just_nums_frames[i] != 0:
+            for j in range(just_nums_frames[i]):
+                filled_data[j] = just_nums[i]
 
         # if this is the last one in the just_num_frames list
-        elif i == len(just_nums_frames) - 1:
+        if i == len(just_nums_frames) - 1:
             # if there is a gap that lasts until the end of the vid, hold the last real num constant
             if just_nums_frames[i] != len(data) - 1:
                 for j in range(just_nums_frames[i], len(data)):
                     filled_data[j] = just_nums[i]
+            # if last frame has actual data in it, no need to do anything (no gaps to fill)
+        # otherwise, fill gaps by connecting actual data points linearly
         else:
             cur_existing_f = just_nums_frames[i]  # existing frame num
             next_existing_f = just_nums_frames[i + 1]  # existing frame num
+            print(cur_existing_f, "and", next_existing_f)
 
             # if there is a gap that starts at the cur existing frame
             if cur_existing_f + 1 != next_existing_f:
@@ -234,6 +236,8 @@ def find_activations_via_deriv(chrom_ID, area_data):
     filled_area_data = fill_in_data_gaps(area_data)
     area_data_np = np.array(filled_area_data)
     frames_np = np.array(range(len(area_data)))
+    print(chrom_ID)
+    print(filled_area_data)
     deriv = dxdt(area_data_np, frames_np, kind="finite_difference", k=1)
     # # plot deriv and area data -- TODO take out once func fully tested
     # if chrom_ID in ["C16", "C67", "C141"]:
@@ -252,6 +256,7 @@ def find_activations_via_deriv(chrom_ID, area_data):
     deact_deriv_thresh = args['deact_deriv_thresh']
 
     for i in range(len(deriv)):
+        # calc approximate slope at i (and account for edge case of last index), mainly to see if pos
         if i == len(deriv) - 1:
             pos_slope, slope = has_pos_slope((i - 1, deriv[i - 1]), (i, deriv[i]))
         else:
