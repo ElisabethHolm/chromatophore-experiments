@@ -205,7 +205,6 @@ def fill_in_data_gaps(data):
         else:
             cur_existing_f = just_nums_frames[i]  # existing frame num
             next_existing_f = just_nums_frames[i + 1]  # existing frame num
-            print(cur_existing_f, "and", next_existing_f)
 
             # if there is a gap that starts at the cur existing frame
             if cur_existing_f + 1 != next_existing_f:
@@ -236,8 +235,6 @@ def find_activations_via_deriv(chrom_ID, area_data):
     filled_area_data = fill_in_data_gaps(area_data)
     area_data_np = np.array(filled_area_data)
     frames_np = np.array(range(len(area_data)))
-    print(chrom_ID)
-    print(filled_area_data)
     deriv = dxdt(area_data_np, frames_np, kind="finite_difference", k=1)
     # # plot deriv and area data -- TODO take out once func fully tested
     # if chrom_ID in ["C16", "C67", "C141"]:
