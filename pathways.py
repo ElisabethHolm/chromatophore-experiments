@@ -10,10 +10,10 @@ import statistics
 import openpyxl  # openpyxl 3.1.1
 import os  # for checking if it's a .xls or .xlsx file
 import pyexcel as p  # pyexcel 0.7.0, pyexcel-xls 0.7.0, pyexcel-xlsx 0.6.0, for converting .xls to .xlsx
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser # argparse 1.4.0
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser  # argparse 1.4.0
 from gooey import Gooey, GooeyParser  # Gooey 1.0.8.1
-from derivative import dxdt
-import numpy as np
+from derivative import dxdt  # derivative 0.5.3
+import numpy as np  # numpy 1.22.4
 
 # 367 12 383 456  # ROI gilly chose
 
@@ -22,7 +22,7 @@ import numpy as np
 # 9896 - clear pathway
 filepath = "New_Vids/Sept_2022_Tests/TS-20220801155100769_367_12_383_456.xls"
 
-mm_nei_thresh = 3  # threshold distance (in mm) for neighbor # TODO play with thresh dist for neighbor
+mm_nei_thresh = 3  # threshold distance (in mm) for neighbor
 
 centroids = OrderedDict()  # dict with key: ID num, value: list [x,y] of its centroid coordinates
 neighborhood = OrderedDict()  # dict with key: ID num, value: set of ID num(s) of its neighbors
@@ -46,7 +46,6 @@ def parse_args():
                     help="Threshold for distance (in mm) of a neighbor")
     ap.add_argument("-a", "--act_deriv_thresh", default=0.0035, type=float,
                     help="Threshold value (of derivative of areas) for activation")
-    # TODO find deact thresh val and set here
     ap.add_argument("-d", "--deact_deriv_thresh", default=-0.0035, type=float,
                     help="Threshold value (of derivative of areas) for activation")
 
@@ -165,7 +164,7 @@ def compute_var_data(chrom_ID, area_data):
     return var_data
 
 
-# TODO? -- might not need to bc of size range method of computing activations
+# TODO? -- might not need to bc of other methods of computing activations
 # determine activation time(s) for a single chrom using the variance time series
 # param: the entire column of variation data (as a dict of frame_num:var)) for that chromatophore
 def find_activations_via_var(chrom_ID, var_data):
@@ -379,6 +378,7 @@ def sort_neighbors(n_set):
     return sorted_neighbors
 
 
+# save all neighbor data to the spreadsheet
 def save_neighbors_data():
     nei_sheet = create_new_sheet('Neighbors')
 
@@ -467,31 +467,24 @@ def save_activation_data(all_activation_data):
         act_sheet.cell(row=1, column=4 + i*3).value = "Dur" + str(i+1)  # duration
 
 
-#def identify_pathways():
-    #print("wahoo")
-
-#def predict_independence():
-    #print("bat time")
-
-
 def main():
     global wb
     global chrom_IDs
 
     # adjust for user-selected options
     parse_args()
-
     set_global_nums()
 
+    # get the file extension to check if we need to convert it and/or if it's invalid
     file_ext = os.path.splitext(filepath)[1]
-
     # convert .xls to .xlsx (so we can use openpyxl) if the input file is .xls
     if file_ext == ".xls":
         convert_xls_to_xlsx()
+    # if file isn't a .xls or .xlsx, raise error
     elif file_ext != ".xlsx":
         raise Exception("Invalid input file. Must be either .xls or .xlsx")
 
-    # load workbook
+    # load workbook from .xlsx file
     wb = openpyxl.load_workbook(filepath)
 
     # get all chrom IDs in order, save to chrom_IDs
