@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt  # matplotlib 3.5.2
 filepath = "New_Vids/Sept_2022_Tests/TS-20220801155100769_367_12_383_456.xlsx"  # clear chrom pathway, ROI near electrode
 chrom_IDs = []  # list of chrom IDs in order of how they appear on spreadsheet, populate in main()
 args = []
+window_size = 30
 n_df = None  # df from neighborhood sheet (populated in load())
 a_df = None  # df from activations sheet  (populated in load())
 
@@ -27,6 +28,8 @@ def parse_args():
 
     ap.add_argument("-s", "--spreadsheet", default=filepath, widget="FileChooser",
                     help="File path of the spreadsheet (.xlsx file generated from pathways.py)")
+    ap.add_argument("-w", "--window_size", default=window_size, type=int,
+                    help="Size of the window to divide frames by")
 
     args = vars(ap.parse_args())
 
@@ -46,8 +49,10 @@ def set_global_nums():
     global n_df
     global a_df
     global chrom_IDs
+    global window_size
 
-    #filepath = args["spreadsheet"]  # TODO bring back if want to select file with file chooser
+    filepath = args["spreadsheet"]
+    window_size = args["window_size"]
     n_df, a_df = load(filepath)  # load the relevant sheets from the file
     chrom_IDs = a_df.loc[:,"Chromatophore ID"].values.tolist()  # get list of chrom IDs
 
@@ -83,7 +88,6 @@ def get_sorted_activations():
 # sort activation frame num into windows
 # return a dataframe with column names as chromatophore and rows as windows of frame nums
 def make_act_histogram(activations):
-    window_size = 30
     n_frames = len(pd.read_excel(f"{filepath}", sheet_name="Areas"))  # number of frames in vid
     n_windows = int(n_frames/window_size) + 1
     windows = np.linspace(0, n_frames, n_windows)  # number will be start of window (0-29, 30-59, etc)
@@ -294,6 +298,10 @@ def get_p_N(neighborhood, num_pairs):
 def T_N_dependent(time_dep, neighborhood, num_time_dep_pairs):
     num_pairs = math.comb(len(chrom_IDs), 2)  # num chroms choose 2 = number of possible pairs
 
+    print("T:", time_dep)
+    print()
+    print("N:", neighborhood)
+
     p_T_and_N = get_p_T_and_N(time_dep, neighborhood, num_pairs)  # P(T AND N)
     p_T = get_p_T(num_time_dep_pairs, num_pairs)  # P(T)
     p_N = get_p_N(neighborhood, num_pairs)  # P(N)
@@ -319,7 +327,7 @@ def T_N_dependent(time_dep, neighborhood, num_time_dep_pairs):
 
 
 def main():
-    #parse_args()  # parse input from user  # TODO bring back if want to select file with file chooser
+    parse_args()  # parse input from user
     set_global_nums()  # set global nums based on user input
 
     # get activations from spreadsheet
