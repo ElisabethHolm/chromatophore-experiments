@@ -497,11 +497,6 @@ def draw_pathway(activations, centroids):
         cv2.putText(image, act_num_label, (int((start_x + end_x) / 2), int((start_y + end_y) / 2)),
                     cv2.FONT_HERSHEY_DUPLEX, 0.4, text_color, 1)
 
-    print("Displaying pathways image. Click on the image and press the spacebar to save the file.")
-    # display image
-    cv2.imshow("pathways", image)
-    cv2.waitKey(0)
-
     # set filename/path for annotated image
     pathways_dir = context_image_dir.replace("_ROI_context.png", "_pathways.png")
 
@@ -509,6 +504,10 @@ def draw_pathway(activations, centroids):
     cv2.imwrite(pathways_dir, image)
 
     print("Saved pathways image to " + pathways_dir)
+
+    # display image
+    cv2.imshow("pathways", image)
+    cv2.waitKey(0)
 
 
 # summary function of the program
