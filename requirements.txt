@@ -10,7 +10,7 @@ joblib==1.2.0
 kiwisolver==1.4.4
 lml==0.1.0
 matplotlib==3.5.2
-numpy==1.22.4
+numpy==1.24.3
 opencv-python==4.6.0.66
 openpyxl==3.1.1
 packaging==21.3
