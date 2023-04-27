@@ -41,7 +41,7 @@ def parse_args():
                      conflict_handler='resolve')
 
     ap.add_argument("-s", "--spreadsheet", default=filepath, widget="FileChooser",
-                    help="File path of the spreadsheet (.xls and .xlsx accepted)")
+                    help="File path of the cleaned spreadsheet from vidProcessing.py (.xls and .xlsx accepted)")
     ap.add_argument("-n", "--neighbor_radius", default=mm_nei_thresh, type=float,
                     help="Threshold for distance (in mm) of a neighbor")
     ap.add_argument("-a", "--act_deriv_thresh", default=0.0035, type=float,
@@ -478,6 +478,11 @@ def main():
         if cell != wb["Areas"].cell(1, 1):
             chrom_IDs.append(cell.value)
 
+    if len(chrom_IDs) == 0:
+        print("WARNING: NO ACTIVATED CHROMATOPHORES DETECTED. You may have chosen an area that "
+              "does not include any chromatophores that activated over the duration of the video."
+              "Please choose an area with at least 2 chromatophores that activate.")
+
     # extract data from centroids sheet, populate centroids dict
     extract_centroids(wb["Centroids"])
 
@@ -498,98 +503,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-'''
-reader = csv.DictReader(open('bats.csv'))
-
-sum_G1 = 0
-sum_G2 = 0
-sum_G3 = 0
-sum_G4 = 0
-sum_G5 = 0
-sum_T = 0
-num_bats = 0
-
-sum_G1_given_T = 0
-sum_G2_given_T = 0
-sum_G3_given_T = 0
-sum_G4_given_T = 0
-sum_G5_given_T = 0
-
-for bat in reader:
-    num_bats += 1
-
-    if bat['G1'].lower() == "true":
-        sum_G1 += 1
-    if bat['G2'].lower() == "true":
-        sum_G2 += 1
-    if bat['G3'].lower() == "true":
-        sum_G3 += 1
-    if bat['G4'].lower() == "true":
-        sum_G4 += 1
-    if bat['G5'].lower() == "true":
-        sum_G5 += 1
-    if bat['T'].lower() == "true":
-        sum_T += 1
-        if bat['G1'].lower() == "true":
-            sum_G1_given_T += 1
-        if bat['G2'].lower() == "true":
-            sum_G2_given_T += 1
-        if bat['G3'].lower() == "true":
-            sum_G3_given_T += 1
-        if bat['G4'].lower() == "true":
-            sum_G4_given_T += 1
-        if bat['G5'].lower() == "true":
-            sum_G5_given_T += 1
-
-prob_G1 = sum_G1/num_bats
-prob_G2 = sum_G2/num_bats
-prob_G3 = sum_G3/num_bats
-prob_G4 = sum_G4/num_bats
-prob_G5 = sum_G5/num_bats
-prob_T = sum_T/num_bats
-
-print("P(GX) -- Probability of each event independently happening (individual events/total num of bats)")
-print("G1: " + str(prob_G1))
-print("G2: " + str(prob_G2))
-print("G3: " + str(prob_G3))
-print("G4: " + str(prob_G4))
-print("G5: " + str(prob_G5))
-print("T:  " + str(prob_T))
-print()
-
-p_G1_given_T = sum_G1_given_T/num_bats
-p_G2_given_T = sum_G2_given_T/num_bats
-p_G3_given_T = sum_G3_given_T/num_bats
-p_G4_given_T = sum_G4_given_T/num_bats
-p_G5_given_T = sum_G5_given_T/num_bats
-
-print("P(GX|T) -- Probability of GX appearing given T is true (sum_GX_given_T/num_bats)")
-print("G1|T: " + str(p_G1_given_T))
-print("G2|T: " + str(p_G2_given_T))
-print("G3|T: " + str(p_G3_given_T))
-print("G4|T: " + str(p_G4_given_T))
-print("G5|T: " + str(p_G5_given_T))
-print()
-
-def predict_indep(p_GX, p_GX_given_T):
-    difference = abs(p_GX*prob_T - p_GX_given_T)
-    print("Difference:" + str(difference))
-    if difference < 0.01 :
-        print("Result: NOT independent of T")
-    else:
-        print("Result: independent of T")
-    print()
-
-print("Prediction of independence based on difference between P(GX)*P(T) and P(GX|T) (dependent if <0.01 apart from each other)")
-print("G1 :")
-predict_indep(prob_G1, p_G1_given_T)
-print("G2 :")
-predict_indep(prob_G2, p_G2_given_T)
-print("G3 :")
-predict_indep(prob_G3, p_G3_given_T)
-print("G4 :")
-predict_indep(prob_G4, p_G4_given_T)
-print("G5 :")
-predict_indep(prob_G5, p_G5_given_T)
-'''

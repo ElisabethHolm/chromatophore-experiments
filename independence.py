@@ -518,6 +518,11 @@ def main():
     # get activations from spreadsheet
     chronological_activations, activations_by_chrom = get_sorted_activations()
 
+    if len(chronological_activations) == 0:
+        print("WARNING: NO ACTIVATED CHROMATOPHORES DETECTED. You may have chosen an area that "
+              "does not include any chromatophores that activated over the duration of the video."
+              "Please choose an area with at least 2 chromatophores that activate.")
+
     # sort activation times into windows
     hist_act_df = make_act_histogram(activations_by_chrom)
 
@@ -532,9 +537,9 @@ def main():
 
     # display results
     if T_N_dep:
-        print("T and N are dependent.")
+        print("T and N are dependent in this ROI.")
     else:
-        print("T and N are independent.")
+        print("T and N are independent in this ROI.")
 
     # get centroids from sheet
     centroids = extract_centroids()
