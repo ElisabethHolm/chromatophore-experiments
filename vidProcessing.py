@@ -662,7 +662,7 @@ ROI_x, ROI_y, ROI_width, ROI_height = 0, 0, ORIGINAL_WIDTH, ORIGINAL_HEIGHT
 def saveRoiContextImg(ROI, full_frame):
 	rect_top_left = (ROI_x, ROI_y)
 	rect_bottom_right = (ROI_x + ROI_width, ROI_y + ROI_height)
-	cv2.rectangle(full_frame, rect_top_left, rect_bottom_right, (0, 0, 255), 2)
+	cv2.rectangle(full_frame, rect_top_left, rect_bottom_right, (0, 0, 255), 1)
 
 	# TODO put ID num frame on top of context frame so you can see all ID nums
 
