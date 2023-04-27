@@ -10,6 +10,10 @@ from gooey import Gooey, GooeyParser  # Gooey 1.0.8.1
 import numpy as np  # numpy 1.22.4
 import pandas as pd  # pandas 1.5.3
 import matplotlib.pyplot as plt  # matplotlib 3.5.2
+from matplotlib import cm, colors
+import os  # for finding context image
+import cv2  # for drawing pathways image -- can prob replace w smaller module later
+import openpyxl  # openpyxl 3.1.1
 
 filepath = "New_Vids/Sept_2022_Tests/TS-20220801155100769_367_12_383_456.xlsx"  # clear chrom pathway, ROI near electrode
 chrom_IDs = []  # list of chrom IDs in order of how they appear on spreadsheet, populate in main()
@@ -17,6 +21,7 @@ args = []
 window_size = 30
 n_df = None  # df from neighborhood sheet (populated in load())
 a_df = None  # df from activations sheet  (populated in load())
+c_df = None  # df from centroids sheet  (populated in load())
 
 
 @Gooey  # The GUI Decorator goes here
@@ -29,7 +34,20 @@ def parse_args():
     ap.add_argument("-s", "--spreadsheet", default=filepath, widget="FileChooser",
                     help="File path of the spreadsheet (.xlsx file generated from pathways.py)")
     ap.add_argument("-w", "--window_size", default=window_size, type=int,
-                    help="Size of the window to divide frames by")
+                    help="Size of the time window to divide frames by")
+    ap.add_argument("-h", "--display_hist", default="off", choices=["off", "on"],
+                    help="Display histogram of chromatophore activations over time")
+    ap.add_argument("-a", "--arrows_img", default="auto_detect", widget="FileChooser",
+                    help="File path of the context image (to annotate with activation pathway arrows)")
+    ap.add_argument("-c", "--arrow_color", default="rainbow spectrum",
+                    choices=["uniform (green/blue)", "rainbow spectrum",
+                             "cyan/magenta spectrum", "blue/green spectrum"],
+                    help="Color of arrows that draw activation pathway")
+    ap.add_argument("-r", "--activations_of_interest", default="", type=str,
+                    help="start and end for activation numbers of interest, each number separated "
+                         "by a space (e.g. 3 8). Useful to look at fewer activations if "
+                         "many activations overlap in the pathways image. "
+                         "Leave blank to draw all activations on the pathways image.")
 
     args = vars(ap.parse_args())
 
@@ -39,8 +57,9 @@ def load(filename):
     # neighborhood spreadsheet
     n_df = pd.read_excel(f"{filename}", sheet_name="Neighbors")
     a_df = pd.read_excel(f"{filename}", sheet_name="Activations")
+    c_df = pd.read_excel(f"{filename}", sheet_name="Centroids")
 
-    return n_df, a_df
+    return n_df, a_df, c_df
 
 
 # set global nums based on args
@@ -48,21 +67,24 @@ def set_global_nums():
     global filepath
     global n_df
     global a_df
+    global c_df
     global chrom_IDs
     global window_size
 
     filepath = args["spreadsheet"]
     window_size = args["window_size"]
-    n_df, a_df = load(filepath)  # load the relevant sheets from the file
+    n_df, a_df, c_df = load(filepath)  # load the relevant sheets from the file
     chrom_IDs = a_df.loc[:,"Chromatophore ID"].values.tolist()  # get list of chrom IDs
 
 
 # sort all activations chronologically
 # return 2D list of activations in chronological order with items [chrom_ID, activation_frame]
 # e.g [["C12", 23], ["C45", 28], ...]
+# also return activations sorted by chromatophore
+# e.g. {"C12": [23, 48], "C45":[28]}
 def get_sorted_activations():
-    time_activations = []
-    activations = {}
+    chronological_activations = []
+    activations_by_chrom = {}
 
     # iterate through each chromatophore, populate sorted_activations list
     for i in range(len(chrom_IDs)):
@@ -74,15 +96,15 @@ def get_sorted_activations():
             a_frame = row[a_i]
             # if this is an activation (not nan)
             if not row.isnull()[a_i]:
-                time_activations.append([chrom_ID, a_frame])
+                chronological_activations.append([chrom_ID, a_frame])
                 chrom_activations.append(a_frame)
 
-        activations[chrom_ID] = chrom_activations
+        activations_by_chrom[chrom_ID] = chrom_activations
 
     # sort chronologically
-    time_activations = sorted(time_activations, key=lambda l:l[1])
+    chronological_activations = sorted(chronological_activations, key=lambda l:l[1])
 
-    return time_activations, activations
+    return chronological_activations, activations_by_chrom
 
 
 # sort activation frame num into windows
@@ -106,7 +128,8 @@ def make_act_histogram(activations):
 
     hist_a_df = pd.DataFrame(data)
 
-    plot_act_histogram(hist_a_df, window_size)
+    if args["display_hist"] == "on":
+        plot_act_histogram(hist_a_df, window_size)
 
     return hist_a_df
 
@@ -326,18 +349,181 @@ def T_N_dependent(time_dep, neighborhood, num_time_dep_pairs):
     return dep
 
 
+# get the centroids from the spreadsheet, populates the centroids dict so we can use that instead
+def extract_centroids():
+    # load workbook from .xlsx file
+    wb = openpyxl.load_workbook(filepath)
+    # get centroids sheet
+    centroids_sheet = wb["Centroids"]
+    # initialize dictionary
+    centroids = {}
+
+    # Put the centroid of each chrom into the centroids dictionary
+    for colNumber in range(2, centroids_sheet.max_column):
+        cur_ID = centroids_sheet.cell(1, colNumber).value  # get ID num of cur chrom
+
+        # get this chrom's centroid vals
+        x = float(centroids_sheet.cell(2, colNumber).value)
+        y = float(centroids_sheet.cell(3, colNumber).value)
+        cur_centroid = [x, y]
+
+        centroids[cur_ID] = cur_centroid  # populate centroid dict
+
+    return centroids
+
+
+# return ROI from parsing the xlsx filepath
+def extract_ROI():
+    # xlsx file name (with extension)
+    filename_ext = os.path.basename(filepath)
+    # xlsx file name without extension
+    filename_no_ext = os.path.splitext(filename_ext)[0]
+    # extract ROI from xlsx file name
+    ROI = filename_no_ext.split("_")[1:]  # [x, y, w, h] of ROI
+    # make ROI nums into actual nums (not strings)
+    for i in range(len(ROI)):
+        ROI[i] = int(ROI[i])
+
+    return ROI
+
+
+# return directory of context image that we'll be annotating
+# later in the draw_pathway() function
+def get_context_image_dir():
+    ROI = extract_ROI()
+
+    # TODO update vidprocessing.py to make centroids not relative to ROI ?
+
+    # set directory of the context image (that we'll be drawing on)
+    if args["arrows_img"] == "auto_detect":
+        context_image_dir = os.path.splitext(filepath)[0] + "_ROI_context.png"
+    else:
+        context_image_dir = args["arrows_img"]
+
+    # if the context image cannot be found, raise error
+    if not os.path.exists(context_image_dir):
+        raise Exception("No image found at " + context_image_dir + ". Please run vidProcessing.py "
+                                                                "on the same video + ROI to "
+                                                                "generate the context image. Also "
+                                                                "ensure that the context image "
+                                                                "has the aforementioned "
+                                                                   "name/filepath.")
+
+    return context_image_dir, ROI
+
+
+# return matplotlib name of cmap based on selection from args
+def get_cmap_name():
+    if args["arrow_color"] == "rainbow_spectrum":
+        return "Spectral"
+    elif args["arrow_color"] == "cyan/magenta spectrum":
+        return "cool"
+    elif args["arrow_color"] == "blue/green spectrum":
+        return "winter"
+
+
+# generate discreet points of color along a spectrum
+# so we can better distinguish different activations
+# chronologically based on what color their arrow/label is
+def get_spectrum_colors(num_activations, cmap_name):
+    spectrum_colors = []
+
+    x = np.linspace(0, num_activations - 1, num_activations)
+
+    # define color map
+    cmap = cm.get_cmap(cmap_name)
+    # need to normalize because color maps are defined in [0, 1]
+    norm = colors.Normalize(0, num_activations - 1)
+
+    # fill in colors array with
+    for i in x:
+        color_i = cmap(norm(i))[:-1]
+        r = int(color_i[0] * 255)
+        g = int(color_i[1] * 255)
+        b = int(color_i[2] * 255)
+        spectrum_colors.append((b, g, r))
+
+    # TODO (if time) -- check why spectrum_colors is normalizing to default len (50)
+    return spectrum_colors
+
+
+# draws a pathway of activation chronologically
+# draws arrows on image from centroid to centroid
+# takes in a list of activations sorted chronologically
+# e.g [["C12", 23], ["C45", 28], ...]
+# expects the context image to exist already from running vidProcessing.py
+def draw_pathway(activations, centroids):
+    # get path to image that we'll be annotating
+    context_image_dir, ROI = get_context_image_dir()
+
+    # open image
+    image = cv2.imread(context_image_dir)
+
+    # generate colors to display arrow/label colors from a spectrum (to distinguish chronologically)
+    if args["arrow_color"] != "uniform (green/blue)":
+        cmap_name = get_cmap_name()
+        spectrum = get_spectrum_colors(len(activations), cmap_name)
+
+    act_offset = 1  # adjustment to displayed activation number
+    # if the user wants to only look at specific activations (e.g. 3rd through 6th)
+    if args["activations_of_interest"] != "":
+        act_offset = int(args["activations_of_interest"].split(" ")[0])  # 1st activation num of interest
+
+    # draw arrow between each activation chronologically
+    for i in range(len(activations) - 1):
+        start_chrom = activations[i][0]  # ID of chrom where arrow will start from
+        # adjust for ROI since centroid is relative to ROI, not full image
+        start_x = int(centroids[start_chrom][0]) + ROI[0]
+        start_y = int(centroids[start_chrom][1]) + ROI[1]
+
+        end_chrom = activations[i+1][0]  # ID of chrom where arrow will end at
+        end_x = int(centroids[end_chrom][0]) + ROI[0]
+        end_y = int(centroids[end_chrom][1]) + ROI[1]
+
+        act_num_label = str(i + act_offset)
+
+        # set arrow and text colors
+        if args["arrow_color"] != "uniform (green/blue)":  # color based on spectrum
+            arrow_color = spectrum[i]
+            text_color = spectrum[i]  # TODO consider changing to black text (0, 0, 0)
+        else:  # default colors (green arrows, blue labels)
+            arrow_color = (0, 255, 0)
+            text_color = (255, 0, 0)
+
+        # draw arrow
+        cv2.arrowedLine(image, (start_x, start_y), (end_x, end_y), arrow_color, 1, cv2.LINE_AA,
+                        0, 0.06)
+        # add text labelling what number activation it is (1, 2, etc)
+        cv2.putText(image, act_num_label, (int((start_x + end_x) / 2), int((start_y + end_y) / 2)),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.4, text_color, 1)
+
+    print("Displaying pathways image. Click on the image and press the spacebar to save the file.")
+    # display image
+    cv2.imshow("pathways", image)
+    cv2.waitKey(0)
+
+    # set filename/path for annotated image
+    pathways_dir = context_image_dir.replace("_ROI_context.png", "_pathways.png")
+
+    # save image
+    cv2.imwrite(pathways_dir, image)
+
+    print("Saved pathways image to " + pathways_dir)
+
+
+# summary function of the program
 def main():
     parse_args()  # parse input from user
     set_global_nums()  # set global nums based on user input
 
     # get activations from spreadsheet
-    time_activations, activations = get_sorted_activations()
+    chronological_activations, activations_by_chrom = get_sorted_activations()
 
     # sort activation times into windows
-    hist_a_df = make_act_histogram(activations)
+    hist_act_df = make_act_histogram(activations_by_chrom)
 
     # find time-dependent pairs
-    time_dep, num_time_dep_pairs = get_time_dep_pairs(hist_a_df)
+    time_dep, num_time_dep_pairs = get_time_dep_pairs(hist_act_df)
 
     # get neighborhood from spreadsheet
     neighborhood = get_neighborhood()
@@ -350,6 +536,24 @@ def main():
         print("T and N are dependent.")
     else:
         print("T and N are independent.")
+
+    # get centroids from sheet
+    centroids = extract_centroids()
+
+    # if the user wants to only look at specific activations (e.g. 3rd through 6th)
+    if args["activations_of_interest"] != "":
+        act_start, act_end = args["activations_of_interest"].split(" ")
+
+        # draw pathway of specific activations on image
+        # note: + 2 to adjust for slicing being non-inclusive for end num and user
+        # probably 1-indexing the activations
+        draw_pathway(chronological_activations[int(act_start):int(act_end) + 2], centroids)
+    else:
+        # draw pathway of all activations on image
+        draw_pathway(chronological_activations, centroids)
+
+    # close open image windows
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
