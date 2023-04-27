@@ -164,20 +164,6 @@ def compute_var_data(chrom_ID, area_data):
     return var_data
 
 
-# TODO? -- might not need to bc of other methods of computing activations
-# determine activation time(s) for a single chrom using the variance time series
-# param: the entire column of variation data (as a dict of frame_num:var)) for that chromatophore
-def find_activations_via_var(chrom_ID, var_data):
-    # iterate through each variance data point
-    for frame_num in range(len(var_data.keys())):
-        var_pt = var_data[frame_num]
-
-        # TODO?
-        # take avg slope between prev 3 data points -- testing frame 4, we'd avg slopes between
-        # 1/2 2/3 3/4
-        # if that avg slope exceeds 500 (or some threshold amount) then that counts as an event
-
-
 # fill in gaps in data (essentially drawing a straight line between points across the gaps)
 # takes in a list with area data (and None where no real data)
 # returns list of same size, but with data interpolated
