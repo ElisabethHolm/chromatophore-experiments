@@ -31,7 +31,7 @@ def parse_args():
     ap = GooeyParser(formatter_class=ArgumentDefaultsHelpFormatter,
                      conflict_handler='resolve')
 
-    ap.add_argument("-s", "--spreadsheet", default=filepath, widget="FileChooser",
+    ap.add_argument("-x", "--spreadsheet", default=filepath, widget="FileChooser",
                     help="File path of the spreadsheet (.xlsx file generated from pathways.py)")
     ap.add_argument("-w", "--window_size", default=window_size, type=int,
                     help="Size of the time window to divide frames by")
@@ -43,6 +43,8 @@ def parse_args():
                     choices=["uniform (green/blue)", "rainbow spectrum",
                              "cyan/magenta spectrum", "blue/green spectrum"],
                     help="Color of arrows that draw activation pathway")
+    ap.add_argument("-s", "--pathway_step_through", default="off", choices=["on", "off"],
+                    help="Wait for a key press before displaying the next pathway arrow")
     ap.add_argument("-r", "--activations_of_interest", default="", type=str,
                     help="start and end for activation numbers of interest, each number separated "
                          "by a space (e.g. 3 8). Useful to look at fewer activations if "
@@ -497,6 +499,12 @@ def draw_pathway(activations, centroids):
         cv2.putText(image, act_num_label, (int((start_x + end_x) / 2), int((start_y + end_y) / 2)),
                     cv2.FONT_HERSHEY_DUPLEX, 0.4, text_color, 1)
 
+        # wait for the user to click a key before displaying the next arrow on the image
+        if args["pathway_step_through"] == "on":
+            # display image
+            cv2.imshow("Activation pathway", image)
+            cv2.waitKey(0)
+
     # set filename/path for annotated image
     pathways_dir = context_image_dir.replace("_ROI_context.png", "_pathways.png")
 
@@ -506,7 +514,7 @@ def draw_pathway(activations, centroids):
     print("Saved pathways image to " + pathways_dir)
 
     # display image
-    cv2.imshow("pathways", image)
+    cv2.imshow("Activation pathway", image)
     cv2.waitKey(0)
 
 
@@ -537,9 +545,9 @@ def main():
 
     # display results
     if T_N_dep:
-        print("T and N are dependent in this ROI.")
+        print("T (temporal data) and N (spatial data) are dependent in this ROI.")
     else:
-        print("T and N are independent in this ROI.")
+        print("T (temporal data) and N (spatial data) are independent in this ROI.")
 
     # get centroids from sheet
     centroids = extract_centroids()
