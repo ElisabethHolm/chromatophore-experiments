@@ -71,8 +71,8 @@ def parse_args():
 	ap.add_argument("-o", "--watch_only", default="off", choices=["off", "on"],
 					help="If you want to only re-watch the video (e.g. to check if the ID numbers "
 						 "change over time), but not save any spreadsheet data")
-	ap.add_argument("-p", "--prioritize", default="prevent switching IDs",
-					choices=["prevent switching IDs",
+	ap.add_argument("-p", "--prioritize", default="more accurate IDs and area",
+					choices=["more accurate IDs and area",
 							 "prevent merging of adjacent chroms"],
 					help="Adjusts parameters of detection to priortize certain features -- IDs (best for well-spaced chromatophores), merging (best if many chroms overlap when expanded)")
 	ap.add_argument("-c", "--save_ROI_context_img", default="on", choices=["off", "on"],
@@ -125,7 +125,7 @@ def setGlobalNums():
 	PIXELS_PER_MM = (800.353 / 1920) * (magnification / 50) * (1920 / ORIGINAL_WIDTH) * WINDOW_WIDTH
 
 	# Note: a fully expanded market squid chromatophore is ~1.7 mm in diameter
-	if args["prioritize"] == "prevent switching IDs":
+	if args["prioritize"] == "more accurate IDs and area":
 		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 2.5)  # use 2.5 maybe, sometimes connects adjacent ones
 	elif args["prioritize"] == "prevent merging of adjacent chroms":
 		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 1.3)  # use 2.5 maybe, sometimes connects adjacent ones
@@ -586,7 +586,8 @@ def plotChromAreas():
 # shows the current frame with chromatophore IDs, adjusting
 # for mac and windows systems (running on windows caused an error with displaying the frame)
 def showIDFrame(curFrameIndex, ID_frame):
-	cv2.imshow("ID frame for " + str(curFrameIndex), ID_frame)
+	cv2.imshow("ID frame", ID_frame)  # TODO check if this fixes it on windows
+	#cv2.imshow("ID frame for " + str(curFrameIndex), ID_frame)
 
 	# move window to same spot in screen as the previous windows
 	#cv2.moveWindow("ID frame for " + str(curFrameIndex), 10, 10)
