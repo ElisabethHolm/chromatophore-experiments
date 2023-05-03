@@ -37,14 +37,16 @@ def parse_args():
                     help="Size of the time window to divide frames by")
     ap.add_argument("-h", "--display_hist", default="off", choices=["off", "on"],
                     help="Display histogram of chromatophore activations over time")
-    ap.add_argument("-a", "--arrows_img", default="auto_detect", widget="FileChooser",
-                    help="File path of the context image (to annotate with activation pathway arrows)")
     ap.add_argument("-c", "--arrow_color", default="rainbow spectrum",
                     choices=["uniform (green/blue)", "rainbow spectrum",
                              "cyan/magenta spectrum", "blue/green spectrum"],
                     help="Color of arrows that draw activation pathway")
     ap.add_argument("-s", "--pathway_step_through", default="off", choices=["on", "off"],
                     help="Wait for a key press before displaying the next pathway arrow")
+    ap.add_argument("-p", "--save_pathway_steps", default="off", choices=["on", "off"],
+                    help="Save individual images showing the progression of the pathway")
+    ap.add_argument("-a", "--arrows_img", default="auto_detect", widget="FileChooser",
+                    help="File path of the context image (to annotate with activation pathway arrows)")
     ap.add_argument("-r", "--activations_of_interest", default="", type=str,
                     help="start and end for activation numbers of interest, each number separated "
                          "by a space (e.g. 3 8). Useful to look at fewer activations if "
@@ -76,7 +78,7 @@ def set_global_nums():
     filepath = args["spreadsheet"]
     window_size = args["window_size"]
     n_df, a_df, c_df = load(filepath)  # load the relevant sheets from the file
-    chrom_IDs = a_df.loc[:,"Chromatophore ID"].values.tolist()  # get list of chrom IDs
+    chrom_IDs = a_df.loc[:, "Chromatophore ID"].values.tolist()  # get list of chrom IDs
 
 
 # sort all activations chronologically
@@ -104,7 +106,7 @@ def get_sorted_activations():
         activations_by_chrom[chrom_ID] = chrom_activations
 
     # sort chronologically
-    chronological_activations = sorted(chronological_activations, key=lambda l:l[1])
+    chronological_activations = sorted(chronological_activations, key=lambda l: l[1])
 
     return chronological_activations, activations_by_chrom
 
@@ -113,13 +115,14 @@ def get_sorted_activations():
 # return a dataframe with column names as chromatophore and rows as windows of frame nums
 def make_act_histogram(activations):
     n_frames = len(pd.read_excel(f"{filepath}", sheet_name="Areas"))  # number of frames in vid
-    n_windows = int(n_frames/window_size) + 1
-    windows = np.linspace(0, n_frames, n_windows)  # number will be start of window (0-29, 30-59, etc)
+    n_windows = int(n_frames / window_size) + 1
+    windows = np.linspace(0, n_frames,
+                          n_windows)  # number will be start of window (0-29, 30-59, etc)
     data = {"window start": windows}  # initialize data with windows as first column
 
     # iterate through chronological activations
     for chrom_ID, act_list in activations.items():
-        chrom_bin_hist_data = [0]*len(windows)  # initialize a list of 0's
+        chrom_bin_hist_data = [0] * len(windows)  # initialize a list of 0's
 
         # iterate through each activation, switch bit of whatever window it happens in to 1
         for act in act_list:
@@ -189,9 +192,9 @@ def pair_time_dependent(hist_a_df, ID_i, ID_j):
     p_A_j = get_p_A_i(hist_a_df, ID_j)  # P(A_j)
 
     # if P(A_i AND A_j) = P(A_i)P(A_j), pair is independent
-    difference = abs(p_A_i_and_A_j - p_A_i*p_A_j)
+    difference = abs(p_A_i_and_A_j - p_A_i * p_A_j)
     # also don't count pair as dep if one of them never activated
-    if difference < 0.01 or p_A_i*p_A_j == 0:
+    if difference < 0.01 or p_A_i * p_A_j == 0:
         dep = False  # they are independent
     else:
         dep = True  # they are dependent
@@ -332,14 +335,14 @@ def T_N_dependent(time_dep, neighborhood, num_time_dep_pairs):
     p_N = get_p_N(neighborhood, num_pairs)  # P(N)
 
     # if P(T AND N) = P(T) * P(N), T and N are independent
-    difference = abs(p_T_and_N - p_T*p_N)
+    difference = abs(p_T_and_N - p_T * p_N)
 
     # print calculations for T and N being independent
     print("If T and N are independent, we expect P(T AND N) = P(T) * P(N)")
     print("P(T):", p_T)
     print("P(N):", p_N)
     print("P(T AND N):", p_T_and_N)
-    print("P(T)*P(N):", p_T*p_N)
+    print("P(T)*P(N):", p_T * p_N)
     print("Difference:", difference)
     print()
 
@@ -405,10 +408,10 @@ def get_context_image_dir():
     # if the context image cannot be found, raise error
     if not os.path.exists(context_image_dir):
         raise Exception("No image found at " + context_image_dir + ". Please run vidProcessing.py "
-                                                                "on the same video + ROI to "
-                                                                "generate the context image. Also "
-                                                                "ensure that the context image "
-                                                                "has the aforementioned "
+                                                                   "on the same video + ROI to "
+                                                                   "generate the context image. Also "
+                                                                   "ensure that the context image "
+                                                                   "has the aforementioned "
                                                                    "name/filepath.")
 
     return context_image_dir, ROI
@@ -445,8 +448,20 @@ def get_spectrum_colors(num_activations, cmap_name):
         b = int(color_i[2] * 255)
         spectrum_colors.append((b, g, r))
 
-    # TODO (if time) -- check why spectrum_colors is normalizing to default len (50)
     return spectrum_colors
+
+
+# return filepath to pathway folder
+# creates the folder if it doesn't already exist
+def get_pathway_folder_dir(context_img_dir):
+    folder = context_img_dir.replace('ROI_context.png', 'pathway_steps')
+
+    # checking if the frame_cap folder exists yet
+    if not os.path.isdir(folder):
+        # if the frame_cap directory is not present then create it
+        os.makedirs(folder)
+
+    return folder
 
 
 # draws a pathway of activation chronologically
@@ -466,10 +481,16 @@ def draw_pathway(activations, centroids):
         cmap_name = get_cmap_name()
         spectrum = get_spectrum_colors(len(activations), cmap_name)
 
+    step_folder_dir = ""
+    # if the user wants to save every pathway step image
+    if args["save_pathway_steps"] == "on":
+        step_folder_dir = get_pathway_folder_dir(context_image_dir)
+
     act_offset = 1  # adjustment to displayed activation number
     # if the user wants to only look at specific activations (e.g. 3rd through 6th)
     if args["activations_of_interest"] != "":
-        act_offset = int(args["activations_of_interest"].split(" ")[0])  # 1st activation num of interest
+        act_offset = int(
+            args["activations_of_interest"].split(" ")[0])  # 1st activation num of interest
 
     # draw arrow between each activation chronologically
     for i in range(len(activations) - 1):
@@ -478,7 +499,7 @@ def draw_pathway(activations, centroids):
         start_x = int(centroids[start_chrom][0]) + ROI[0]
         start_y = int(centroids[start_chrom][1]) + ROI[1]
 
-        end_chrom = activations[i+1][0]  # ID of chrom where arrow will end at
+        end_chrom = activations[i + 1][0]  # ID of chrom where arrow will end at
         end_x = int(centroids[end_chrom][0]) + ROI[0]
         end_y = int(centroids[end_chrom][1]) + ROI[1]
 
@@ -505,6 +526,11 @@ def draw_pathway(activations, centroids):
             cv2.imshow("Activation pathway", image)
             cv2.waitKey(0)
 
+        # if the user wants to save every pathway step image
+        if step_folder_dir != "":
+            # save image
+            cv2.imwrite(step_folder_dir + "/activation_" + act_num_label + ".png", image)
+
     # set filename/path for annotated image
     pathways_dir = context_image_dir.replace("_ROI_context.png", "_pathways.png")
 
@@ -513,7 +539,7 @@ def draw_pathway(activations, centroids):
 
     print("Saved pathways image to " + pathways_dir)
 
-    # display image
+    # display full pathway image
     cv2.imshow("Activation pathway", image)
     cv2.waitKey(0)
 
@@ -566,6 +592,7 @@ def main():
 
     # close open image windows
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()
