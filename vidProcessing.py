@@ -15,7 +15,7 @@ import numpy as np  # numpy 1.22.4
 from scipy.spatial import distance as dist  # scipy 1.8.1
 from collections import OrderedDict
 import matplotlib.pyplot as plt  # matplotlib 3.5.2
-from xlwt import Workbook  # xlwt 1.3.0
+from openpyxl.workbook import Workbook  # openpyxl 3.1.1
 import math
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser # argparse 1.4.0
 from gooey import Gooey, GooeyParser  # Gooey 1.0.8.1
@@ -504,57 +504,59 @@ def formatData(numFrames, ROI, cleaned):
 
 	# Workbook is created
 	wb = Workbook()
-	areasSheet = wb.add_sheet('Areas')
-	centroidsSheet = wb.add_sheet('Centroids')
+	areasSheet = wb.create_sheet('Areas')
+	areasSheet.title = "Areas"
+	centroidsSheet = wb.create_sheet('Centroids')
+	centroidsSheet.title = "Centroids"
+	del wb['Sheet']  # delete default sheet
 
 	# Put labels on the sheets
-	areasSheet.write(0, 0, "frame")
-	centroidsSheet.write(0, 0, "Centroid (in pixels)")
-	centroidsSheet.write(1, 0, "x")
-	centroidsSheet.write(2, 0, "y")
+	areasSheet.cell(row=1, column=1).value = "frame"
+	centroidsSheet.cell(row=1, column=1).value = "Centroid (in pixels)"
+	centroidsSheet.cell(row=2, column=1).value = "x"
+	centroidsSheet.cell(row=3, column=1).value = "y"
+
+	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
 
 	# add some useful sheet/vid-specific info
-	centroidsSheet.write(4, 0, "Video:")
-	centroidsSheet.write(4, 1, curVidPath)
-	centroidsSheet.write(5, 0, "ROI:")
-	centroidsSheet.write(5, 1, str(ROI[0]) + " " + str(ROI[1]) + " " + str(ROI[2]) + " " + str(ROI[3]))
-	centroidsSheet.write(6, 0, "Pixels per mm:")
-	centroidsSheet.write(6, 1, PIXELS_PER_MM)
-
+	centroidsSheet.cell(row=5, column=1).value = "Video:"
+	centroidsSheet.cell(row=5, column=2).value = curVidPath
+	centroidsSheet.cell(row=6, column=1).value = "ROI:"
+	centroidsSheet.cell(row=6, column=2).value = roiString[1:]
+	centroidsSheet.cell(row=7, column=1).value = "Pixels per mm:"
+	centroidsSheet.cell(row=7, column=2).value = PIXELS_PER_MM
 
 	# add column in column 0 that says each frame number
 	for frame_num in range(numFrames + 1):
-		areasSheet.write(frame_num + 1, 0, frame_num)
+		areasSheet.cell(row=frame_num + 2, column=1).value = frame_num
 
-	curCol = 1
+	curCol = 2
 
 	# iterate through each identified chromatophore
 	for id_num, areas in chromAreas.items():
 		# add ID num to both sheets on row 0
-		areasSheet.write(0, curCol, "C" + str(id_num))
-		centroidsSheet.write(0, curCol, "C" + str(id_num))
+		areasSheet.cell(row=1, column=curCol).value = "C" + str(id_num)
+		centroidsSheet.cell(row=1, column=curCol).value = "C" + str(id_num)
 
 		# add centroid to the centroids sheet
 		(x, y) = initialCentroids[id_num]
-		centroidsSheet.write(1, curCol, x)
-		centroidsSheet.write(2, curCol, y)
+		centroidsSheet.cell(row=2, column=curCol).value = x
+		centroidsSheet.cell(row=3, column=curCol).value = y
 
 		# add area time series to areas sheet
 		for frame_num, area in areas.items():
-			areasSheet.write(frame_num + 1, curCol, area)
+			areasSheet.cell(row=frame_num + 2, column=curCol).value = area
 
 		curCol += 1
 
-	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
-
 	if cleaned:
-		directory = curVidPath.replace(vidName_ext, vidName_no_ext) + roiString + ".xls"
+		directory = curVidPath.replace(vidName_ext, vidName_no_ext) + roiString + ".xlsx"
 		wb.save(directory)
 	else:
-		directory = curVidPath.replace(vidName_ext, vidName_no_ext) + roiString + "_uncleaned" + ".xls"
+		directory = curVidPath.replace(vidName_ext, vidName_no_ext) + roiString + "_uncleaned" + ".xlsx"
 
 	wb.save(directory)
-	print("Saved xls data file to " + directory)
+	print("Saved xlsx data file to " + directory)
 
 
 # Plots chrom areas over time (each chromatophore is one line) then shows the graph
