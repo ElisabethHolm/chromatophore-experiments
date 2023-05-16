@@ -602,7 +602,8 @@ def showIDFrame(curFrameIndex, ID_frame):
 
 	if curFrameIndex > 0:
 		# destroy previous frame's window to avoid program slowing down
-		cv2.destroyWindow("ID frame for " + str(curFrameIndex - 1))
+		#cv2.destroyWindow("ID frame for " + str(curFrameIndex - 1))
+		cv2.destroyWindow("ID frame")
 
 
 # show images from each step of the process
