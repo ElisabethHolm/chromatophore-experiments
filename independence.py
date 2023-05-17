@@ -496,12 +496,12 @@ def draw_pathway(activations, centroids):
     for i in range(len(activations) - 1):
         start_chrom = activations[i][0]  # ID of chrom where arrow will start from
         # adjust for ROI since centroid is relative to ROI, not full image
-        start_x = int(centroids[start_chrom][0]) + ROI[0]
-        start_y = int(centroids[start_chrom][1]) + ROI[1]
+        start_x = int(centroids[start_chrom][0])
+        start_y = int(centroids[start_chrom][1])
 
         end_chrom = activations[i + 1][0]  # ID of chrom where arrow will end at
-        end_x = int(centroids[end_chrom][0]) + ROI[0]
-        end_y = int(centroids[end_chrom][1]) + ROI[1]
+        end_x = int(centroids[end_chrom][0])
+        end_y = int(centroids[end_chrom][1])
 
         act_num_label = str(i + act_offset)
 
@@ -518,7 +518,7 @@ def draw_pathway(activations, centroids):
                         0, 0.06)
         # add text labelling what number activation it is (1, 2, etc)
         cv2.putText(image, act_num_label, (int((start_x + end_x) / 2), int((start_y + end_y) / 2)),
-                    cv2.FONT_HERSHEY_DUPLEX, 0.4, text_color, 1)
+                    cv2.FONT_HERSHEY_DUPLEX, 0.7, text_color, 1)
 
         # wait for the user to click a key before displaying the next arrow on the image
         if args["pathway_step_through"] == "on":

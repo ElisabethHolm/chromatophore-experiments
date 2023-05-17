@@ -80,7 +80,7 @@ def extract_centroids(centroids_sheet):
         PIXELS_PER_MM = float(centroids_sheet.cell(10, 2).value)
         print(PIXELS_PER_MM)
     except:
-        PIXELS_PER_MM = 58.3590729166667
+        PIXELS_PER_MM = 112.04942
 
     # Put the centroid of each chrom into the centroids dictionary
     for colNumber in range(2, centroids_sheet.max_column):
@@ -500,6 +500,8 @@ def main():
     wb.save(filepath)
 
     print("Saved updated spreadsheet to " + filepath)
+    print("Program complete. Next, feed the modified .xlsx file and context image "
+          "(generated from vidProcessing.py) into independence.py")
 
 if __name__ == "__main__":
     main()

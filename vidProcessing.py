@@ -23,7 +23,7 @@ import os
 
 
 # these values will be adjusted in setGlobalNums() based on cmd arguments
-WINDOW_WIDTH = 1000
+DISPLAY_SCALE = 0.5
 (ORIGINAL_WIDTH, ORIGINAL_HEIGHT) = (1920, 1080)
 CHROM_PIXEL_DIAMETER = 0
 PIXELS_PER_MM = 0
@@ -77,10 +77,10 @@ def parse_args():
 					help="Adjusts parameters of detection to priortize certain features -- IDs (best for well-spaced chromatophores), merging (best if many chroms overlap when expanded)")
 	ap.add_argument("-c", "--save_ROI_context_img", default="on", choices=["off", "on"],
 					help="Save the image that shows where the ROI is in the uncropped frame")
-	ap.add_argument("-m", "--magnification", default=7, type=float, choices=[7, 10, 12.5, 16, 20, 25, 32, 40, 50, 63, 90],
+	ap.add_argument("-m", "--magnification", default=7, type=float,
 					help="Magnification level of microscope when video was filmed")
-	ap.add_argument("-w", "--window_width", default=WINDOW_WIDTH, type=int,
-					help="Desired display pixel width of frame")
+	ap.add_argument("-e", "--display_scale", default=DISPLAY_SCALE, type=float,
+					help="Scalar for size that frame is displayed")
 	ap.add_argument("-x", "--original_width", default=ORIGINAL_WIDTH, type=int,
 					help="Width dimension of original video frame in pixels")
 	ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, type=int,
@@ -94,7 +94,7 @@ def parse_args():
 # window width and chromatophore pixel diameter based on
 # command line arguments
 def setGlobalNums():
-	global WINDOW_WIDTH
+	global DISPLAY_SCALE
 	global CHROM_PIXEL_DIAMETER
 	global PIXELS_PER_MM
 	global ORIGINAL_WIDTH
@@ -104,7 +104,7 @@ def setGlobalNums():
 	global vidName_ext
 	global vidName_no_ext
 
-	WINDOW_WIDTH = int(args["window_width"])
+	DISPLAY_SCALE = float(args["display_scale"])
 	ORIGINAL_WIDTH = int(args["original_width"])
 	ORIGINAL_HEIGHT = int(args["original_height"])
 	magnification = float(args["magnification"])
@@ -121,14 +121,14 @@ def setGlobalNums():
 	# pixels per mm adjusting for magnification, original resolution, and window width
 	# Note: at x50 magnification, number of pixels for 1 mm is 800.353 on 1920x1080 display
 	#( 800.353 pixels per mm when at magnification 50) * (ratio of current magnification to mag 50) *
-	# (ratio of current resolution to orignal resolution) * (width we're currently displaying in)
-	PIXELS_PER_MM = (800.353 / 1920) * (magnification / 50) * (1920 / ORIGINAL_WIDTH) * WINDOW_WIDTH
+	# (ratio of video's resolution to resolution that calibration measurements were taken on)
+	PIXELS_PER_MM = (800.353 / 1) * (magnification / 50) * (ORIGINAL_WIDTH / 1920)
 
 	# Note: a fully expanded market squid chromatophore is ~1.7 mm in diameter
 	if args["prioritize"] == "more accurate IDs and area":
-		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 2.5)  # use 2.5 maybe, sometimes connects adjacent ones
+		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 3)
 	elif args["prioritize"] == "prevent merging of adjacent chroms":
-		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 1.3)  # use 2.5 maybe, sometimes connects adjacent ones
+		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 2.9)
 
 	# ensure CHROM_PIXEL_DIAMETER is odd (requirement for param it's passed into)
 	if CHROM_PIXEL_DIAMETER % 2 == 0:
@@ -165,7 +165,7 @@ def maskChromatophores(curFrame):
 	# convert frame to grayscale
 	gray_frame = cv2.cvtColor(curFrame, cv2.COLOR_BGR2GRAY)
 	# apply Gaussian blur to reduce noise
-	gray_frame = cv2.GaussianBlur(gray_frame, (5, 5), 0)
+	gray_frame = cv2.GaussianBlur(gray_frame, (7, 7), 0)
 
 	# identifies darkest parts of frame in order to mask out chromatophores from background
 	#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 5, 2)  # B. good, semi noisy/inaccurate blur (11, 11) !
@@ -301,7 +301,10 @@ def register(centroid):
 	matchedCentroids[nextObjectID] = centroid
 	disappeared[nextObjectID] = 0
 	chromAreas[nextObjectID] = {}
-	initialCentroids[nextObjectID] = centroid
+	# Note: + ROI_x and ROI_y make centroids relative to full image, not ROI, for when saving to
+	# spreadsheet. Throughout the program they are relative to ROI, so they will appear as different
+	# nums that refer to the same place on the skin sample
+	initialCentroids[nextObjectID] = (centroid[0] + ROI_x, centroid[1] + ROI_y)
 	nextObjectID += 1
 
 
@@ -456,7 +459,7 @@ def drawIDNums(shapes, frame, ROI):
 			text_y = int(centroid[1]) - 5
 
 		cv2.putText(frame, text, (text_x, text_y),
-						cv2.FONT_HERSHEY_DUPLEX, 0.4, (255, 0, 0), 1)
+						cv2.FONT_HERSHEY_DUPLEX, 0.7, (255, 0, 0), 1)
 		cv2.circle(frame, (int(centroid[0]), int(centroid[1])), 2, (0, 255, 0), -1)
 
 	return frame
@@ -588,9 +591,13 @@ def plotChromAreas():
 # shows the current frame with chromatophore IDs, adjusting
 # for mac and windows systems (running on windows caused an error with displaying the frame)
 def showIDFrame(curFrameIndex, ID_frame):
-	cv2.imshow("ID frame", ID_frame)  # TODO check if this fixes it on windows
-	#cv2.imshow("ID frame for " + str(curFrameIndex), ID_frame)
+	# resize frame when displaying
+	display_frame = imutils.resize(ID_frame.copy(), width=(int(DISPLAY_SCALE*ROI_width)))
+	cv2.imshow("ID frame", display_frame)  # display frame
 
+	# uncomment if want frame nums on each window title (fine on mac but doesn't display properly on
+	# windows)
+	#cv2.imshow("ID frame for " + str(curFrameIndex), frame)
 	# move window to same spot in screen as the previous windows
 	#cv2.moveWindow("ID frame for " + str(curFrameIndex), 10, 10)
 
@@ -602,8 +609,10 @@ def showIDFrame(curFrameIndex, ID_frame):
 
 	#if curFrameIndex > 0:
 		# destroy previous frame's window to avoid program slowing down
+		# uncomment this section if want frame number
+		# displayed in window title, and switch out the first imshow line for the other imshow line
+		# (currently commented out) in this showIDFrame function
 		#cv2.destroyWindow("ID frame for " + str(curFrameIndex - 1))
-		#cv2.destroyWindow("ID frame")
 
 
 # show images from each step of the process
@@ -663,18 +672,29 @@ ROI_x, ROI_y, ROI_width, ROI_height = 0, 0, ORIGINAL_WIDTH, ORIGINAL_HEIGHT
 
 
 # save context image to show where the ROI is in the full frame
-def saveRoiContextImg(ROI, full_frame):
+def saveRoiContextImg(frame, ROI):
+	# draw rectangle for ROI
 	rect_top_left = (ROI_x, ROI_y)
 	rect_bottom_right = (ROI_x + ROI_width, ROI_y + ROI_height)
-	cv2.rectangle(full_frame, rect_top_left, rect_bottom_right, (0, 0, 255), 1)
+	cv2.rectangle(frame, rect_top_left, rect_bottom_right, (0, 0, 255), 2)
 
-	# TODO put ID num frame on top of context frame so you can see all ID nums
+	# draw centroids and ID nums of filtered chroms
+	for ID, centroid in initialCentroids.items():
+		# draw both the ID of the object and the centroid of the
+		# object on the output frame
+		text = str(ID)
+
+		x, y = int(centroid[0]), int(centroid[1])
+
+		cv2.putText(frame, text, (x + 5, y - 5),
+					cv2.FONT_HERSHEY_DUPLEX, 0.7, (255, 0, 0), 1)
+		cv2.circle(frame, (int(x), int(y)), 2, (0, 255, 0), -1)
 
 	roiString = "_" + str(ROI[0]) + "_" + str(ROI[1]) + "_" + str(ROI[2]) + "_" + str(ROI[3])
 	directory = curVidPath.replace(vidName_ext, vidName_no_ext) + roiString + "_ROI_context.png"
 
 	# save in frame_cap folder
-	cv2.imwrite(directory, full_frame)
+	cv2.imwrite(directory, frame)
 	print("Saved ROI context image to " + directory)
 
 
@@ -693,6 +713,7 @@ def processData(vidPath):
 	# open the video
 	vid = cv2.VideoCapture(vidPath)
 	curFrameIndex = 0
+	full_frame = None
 
 	# run computer vision process for each frame in the video
 	while True:
@@ -703,17 +724,13 @@ def processData(vidPath):
 		if not ok:
 			break
 
-		# resize frame to make it easier to compare different windows
-		frame = imutils.resize(frame, width=WINDOW_WIDTH)
-
 		# select region of interest
 		# note: x and y coordinates are of top left corner of ROI
 		if curFrameIndex == 0:
 			ROI_x, ROI_y, ROI_width, ROI_height = getROI(frame)
 			ROI = [ROI_x, ROI_y, ROI_width, ROI_height]
 
-			if args['save_ROI_context_img'] == "on":
-				saveRoiContextImg(ROI, frame.copy())
+			full_frame = frame
 
 		# resize the frame to only include the ROI
 		frame = frame[ROI_y:ROI_y + ROI_height, ROI_x: ROI_x + ROI_width]
@@ -766,7 +783,7 @@ def processData(vidPath):
 		print("Saved the frame captures in " + frameCapDir)
 
 	if args["watch_only"] == "off":
-		# save uncleaned data in a .xls file
+		# save uncleaned data in a .xlsx file
 		formatData(curFrameIndex - 1, ROI, cleaned=False)
 
 		# filter out irrelevant data entries
@@ -774,6 +791,10 @@ def processData(vidPath):
 
 		# format cleaned dataset and save as a .xls file in video's original directory
 		formatData(curFrameIndex - 1, ROI, cleaned=True)
+
+		# save ROI context image
+		if args['save_ROI_context_img'] == "on":
+			saveRoiContextImg(full_frame.copy(), ROI)
 
 		# plot chromatophore areas
 		#plotChromAreas()
@@ -793,6 +814,8 @@ def main():
 
 	# run the program's summary function
 	processData(curVidPath)
+
+	print("Program complete. Next, feed the generated .xlsx file into metadata.py")
 
 
 # Using the special variable
