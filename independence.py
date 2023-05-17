@@ -518,7 +518,7 @@ def draw_pathway(activations, centroids):
                         0, 0.06)
         # add text labelling what number activation it is (1, 2, etc)
         cv2.putText(image, act_num_label, (int((start_x + end_x) / 2), int((start_y + end_y) / 2)),
-                    cv2.FONT_HERSHEY_DUPLEX, 0.7, text_color, 1)
+                    cv2.FONT_HERSHEY_DUPLEX, 0.4, text_color, 1)
 
         # wait for the user to click a key before displaying the next arrow on the image
         if args["pathway_step_through"] == "on":

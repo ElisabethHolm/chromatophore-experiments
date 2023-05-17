@@ -515,7 +515,7 @@ def formatData(numFrames, ROI, cleaned):
 
 	# Put labels on the sheets
 	areasSheet.cell(row=1, column=1).value = "frame"
-	centroidsSheet.cell(row=1, column=1).value = "Centroid (in pixels)"
+	centroidsSheet.cell(row=1, column=1).value = "Centroid (pixels, relative to full image)"
 	centroidsSheet.cell(row=2, column=1).value = "x"
 	centroidsSheet.cell(row=3, column=1).value = "y"
 
