@@ -1,6 +1,7 @@
 # Code by Elisabeth Holm
 # Calculates the changing areas of chromatophores from raw video data
 # using computer vision (openCV)
+# Program 1/3 in pipeline
 # Python 3.10.4
 # April 2022 - Present
 
@@ -71,6 +72,10 @@ def parse_args():
 	ap.add_argument("-o", "--watch_only", default="off", choices=["off", "on"],
 					help="If you want to only re-watch the video (e.g. to check if the ID numbers "
 						 "change over time), but not save any spreadsheet data")
+	ap.add_argument("-j", "--jellyfish", default="off",
+					choices=["on",
+							 "off"],
+					help="Adjusts program to run for jellyfish vids. Note: overrides \"prioritize\" setting.")
 	ap.add_argument("-p", "--prioritize", default="more accurate IDs and area",
 					choices=["more accurate IDs and area",
 							 "prevent merging of adjacent chroms"],
@@ -118,18 +123,27 @@ def setGlobalNums():
 	if os.path.splitext(vidName_ext)[1].lower() not in [".mp4", ".avi"]:
 		raise Exception("Invalid input file. Must be either .mp4 or .avi")
 
-	# pixels per mm adjusting for magnification, original resolution, and window width
-	# Note: at x50 magnification, number of pixels for 1 mm is 800.353 on 1920x1080 display
-	#( 800.353 pixels per mm when at magnification 50) * (ratio of current magnification to mag 50) *
-	# (ratio of video's resolution to resolution that calibration measurements were taken on)
-	PIXELS_PER_MM = (800.353 / 1) * (magnification / 50) * (ORIGINAL_WIDTH / 1920)
+	# settings for chromatophore mode
+	if args["jellyfish"] == "off":
+		# pixels per mm adjusting for magnification, original resolution, and window width
+		# Note: at x50 magnification, number of pixels for 1 mm is 800.353 on 1920x1080 display
+		#( 800.353 pixels per mm when at magnification 50) * (ratio of current magnification to mag 50) *
+		# (ratio of video's resolution to resolution that calibration measurements were taken on)
+		PIXELS_PER_MM = (800.353 / 1) * (magnification / 50) * (ORIGINAL_WIDTH / 1920)
 
-	# Note: a fully expanded market squid chromatophore is ~1.7 mm in diameter
-	if args["prioritize"] == "more accurate IDs and area":
-		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 3)
-	elif args["prioritize"] == "prevent merging of adjacent chroms":
-		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 2.9)
-
+		# Note: a fully expanded market squid chromatophore is ~1.7 mm in diameter
+		# Note 2: jellyfish mode overrides the "prioritize" setting
+		if (args["prioritize"] == "more accurate IDs and area"):
+			CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 3)
+		elif (args["prioritize"] == "prevent merging of adjacent chroms"):
+			CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 2.9)
+			
+	else:  # settings for jellyfish mode
+		PIXELS_PER_MM = (800.353 / 1) * (magnification / 50) * (ORIGINAL_WIDTH / 1920)  # TODO get calibration measurements/check if i need to??
+		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 3)  # random guess that jellyfish bell is 30 mm diameter roughly TODO change
+		# opt 1: * 30
+		# opt 2: * 3
+	
 	# ensure CHROM_PIXEL_DIAMETER is odd (requirement for param it's passed into)
 	if CHROM_PIXEL_DIAMETER % 2 == 0:
 		CHROM_PIXEL_DIAMETER += 1
@@ -165,26 +179,32 @@ def maskChromatophores(curFrame):
 	# convert frame to grayscale
 	gray_frame = cv2.cvtColor(curFrame, cv2.COLOR_BGR2GRAY)
 	# apply Gaussian blur to reduce noise
-	gray_frame = cv2.GaussianBlur(gray_frame, (7, 7), 0)
+	if args["jellyfish"] == "off":
+		gray_frame = cv2.GaussianBlur(gray_frame, (7, 7), 0)
 
-	# identifies darkest parts of frame in order to mask out chromatophores from background
-	#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 5, 2)  # B. good, semi noisy/inaccurate blur (11, 11) !
-	#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 5, 3)  # C. some noise but true to size, blur (3, 3) !!
-	#threshold = cv2.adaptiveThreshold(gray_frame,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY_INV, 3 ,1)  # D. higher threshhold, noisy but true to size, blur (13, 13)
-	#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 3, 2)  # E. not super solid but good mask, blur (5, 5)
-	threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, CHROM_PIXEL_DIAMETER, 10)  # currently using
-	# 2nd to last param should be roughly the num of pixels of the diameter of an avg chromatophore in the frame
+		# identifies darkest parts of frame in order to mask out chromatophores from background
+		#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 5, 2)  # B. good, semi noisy/inaccurate blur (11, 11) !
+		#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 5, 3)  # C. some noise but true to size, blur (3, 3) !!
+		#threshold = cv2.adaptiveThreshold(gray_frame,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY_INV, 3 ,1)  # D. higher threshhold, noisy but true to size, blur (13, 13)
+		#threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 3, 2)  # E. not super solid but good mask, blur (5, 5)
+		threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, CHROM_PIXEL_DIAMETER, 10)  # currently using
+		# 2nd to last param should be roughly the num of pixels of the diameter of an avg chromatophore in the frame
 
-	'''
-	# convert to LAB color space
-	rgb_img = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2RGB)  # gray to RGB
-	bgr_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR) # RGB to GBR
-	lab = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2LAB)  # BGR to lab
-	# get luminance channel
-	l_component = lab[:, :, 0]
-	# setting threshold level at 110, 125 also p good
-	ret, threshold = cv2.threshold(l_component, 215, 255, cv2.THRESH_BINARY_INV)
-	'''
+		'''
+		# convert to LAB color space
+		rgb_img = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2RGB)  # gray to RGB
+		bgr_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR) # RGB to GBR
+		lab = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2LAB)  # BGR to lab
+		# get luminance channel
+		l_component = lab[:, :, 0]
+		# setting threshold level at 110, 125 also p good
+		ret, threshold = cv2.threshold(l_component, 215, 255, cv2.THRESH_BINARY_INV)
+		'''
+	else: 	# jellyfish settings
+		gray_frame = cv2.GaussianBlur(gray_frame, (7, 7), 0)
+		threshold = cv2.adaptiveThreshold(gray_frame, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, CHROM_PIXEL_DIAMETER, 2) 
+		 # opt 1: last param 10
+		 # opt 2: last param 2
 
 	return gray_frame, threshold  # return gray/blurred and masked frame
 
@@ -194,6 +214,10 @@ def maskChromatophores(curFrame):
 def contour(threshold, origImg):
 	# detect the contours on the binary image
 	contours, hierarchy = cv2.findContours(image=threshold, mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_NONE)
+
+	# only take 3 biggest contours bc only 1 jellyfish but might accidentally contour wall or electrode
+	if args["jellyfish"] == "on":
+		contours = sorted(contours, key=cv2.contourArea, reverse=True)[:3]
 
 	# draw contours on the original image
 	contourCopy = origImg.copy()
