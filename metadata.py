@@ -1,6 +1,7 @@
 # Code by Elisabeth Holm
 # Analyzes raw area and centroid data, computing
 # variances, neighbors, activation events, etc
+# Program 2/3 in pipeline
 # Python 3.10.4
 # Feb 2023 - Present
 
@@ -83,7 +84,7 @@ def extract_centroids(centroids_sheet):
         PIXELS_PER_MM = 112.04942
 
     # Put the centroid of each chrom into the centroids dictionary
-    for colNumber in range(2, centroids_sheet.max_column):
+    for colNumber in range(2, centroids_sheet.max_column + 1):
         cur_ID = centroids_sheet.cell(1, colNumber).value  # get ID num of cur chrom
 
         # get this chrom's centroid vals
@@ -316,7 +317,7 @@ def compute_var_and_activations():
     all_activation_data = OrderedDict() # dict with key: chrom ID, value: [act_event_frames, deact_event_frames]
     areas_sheet = wb["Areas"]
 
-    for colNumber in range(2, areas_sheet.max_column):
+    for colNumber in range(2, areas_sheet.max_column + 1):
         chrom_col = get_col_as_list(areas_sheet, colNumber)  # get column as a list
         chrom_ID = chrom_col[0]
 
