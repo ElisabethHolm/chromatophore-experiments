@@ -1,6 +1,7 @@
 # Code by Elisabeth Holm
 # Analyzes chromatophore data to connect
 # temporal and spatial chromatophore data
+# Program 3/3 in pipeline
 # Python 3.10.4
 # March 2023 - Present
 
@@ -22,6 +23,7 @@ window_size = 30
 n_df = None  # df from neighborhood sheet (populated in load())
 a_df = None  # df from activations sheet  (populated in load())
 c_df = None  # df from centroids sheet  (populated in load())
+wb = 0  # global var, redefine to be workbook in main
 
 
 @Gooey  # The GUI Decorator goes here
@@ -74,11 +76,14 @@ def set_global_nums():
     global c_df
     global chrom_IDs
     global window_size
+    global wb
 
     filepath = args["spreadsheet"]
     window_size = args["window_size"]
     n_df, a_df, c_df = load(filepath)  # load the relevant sheets from the file
     chrom_IDs = a_df.loc[:, "Chromatophore ID"].values.tolist()  # get list of chrom IDs
+    # load workbook from .xlsx file
+    wb = openpyxl.load_workbook(filepath)
 
 
 # sort all activations chronologically
@@ -109,6 +114,35 @@ def get_sorted_activations():
     chronological_activations = sorted(chronological_activations, key=lambda l: l[1])
 
     return chronological_activations, activations_by_chrom
+
+
+# creates a new sheet in the wb
+# AND deletes the old sheet if there's one of the same name in that wb already
+# returns new sheet
+def create_new_sheet(sheet_name):
+    global wb
+
+    if sheet_name in wb.sheetnames:
+        del wb[sheet_name]
+
+    return wb.create_sheet(sheet_name)
+
+
+# save all activation data to the spreadsheet
+def save_pathway_to_xlsx(chronological_activations):
+    path_sheet = create_new_sheet('Pathway')
+
+    # add labels at top of spreadsheet
+    path_sheet.cell(row=1, column=1).value = "Chromatophore ID"
+    path_sheet.cell(row=1, column=2).value = "Activation Frame"
+
+    curRow = 2
+    # add each chrom id and activation time to new row in spreadsheet
+    for chrom_ID, act_time in chronological_activations:
+        path_sheet.cell(row=curRow, column=1).value = chrom_ID
+        path_sheet.cell(row=curRow, column=2).value = act_time
+
+        curRow += 1
 
 
 # sort activation frame num into windows
@@ -551,6 +585,10 @@ def main():
 
     # get activations from spreadsheet
     chronological_activations, activations_by_chrom = get_sorted_activations()
+
+    save_pathway_to_xlsx(chronological_activations)
+    # save the file (under the same name, thus replacing the unedited file)
+    wb.save(filepath)
 
     if len(chronological_activations) == 0:
         print("WARNING: NO ACTIVATED CHROMATOPHORES DETECTED. You may have chosen an area that "
