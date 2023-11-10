@@ -246,11 +246,13 @@ def find_activations_via_deriv(chrom_ID, area_data):
             pos_slope, slope = has_pos_slope((i, deriv[i]), (i + 1, deriv[i + 1]))
 
         # if there is an activation event
-        if deriv[i] >= act_deriv_thresh and pos_slope and len(deact_event_frames) == len(act_event_frames):
+        if deriv[i] >= act_deriv_thresh \
+                and pos_slope and len(deact_event_frames) == len(act_event_frames):
             act_event_frames.append(i)
 
         # if there is a deactivation event
-        if deriv[i] <= deact_deriv_thresh and pos_slope and len(deact_event_frames) < len(act_event_frames):
+        if deact_deriv_thresh <= deriv[i] < 0 \
+                and pos_slope and len(deact_event_frames) < len(act_event_frames):
             deact_event_frames.append(i)
 
         # if still active at end of video
