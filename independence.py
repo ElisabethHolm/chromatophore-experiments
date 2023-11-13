@@ -15,6 +15,7 @@ from matplotlib import cm, colors
 import os  # for finding context image
 import cv2  # for drawing pathways image -- can prob replace w smaller module later
 import openpyxl  # openpyxl 3.1.1
+import imutils
 
 filepath = "New_Vids/Sept_2022_Tests/TS-20220801155100769_367_12_383_456.xlsx"  # clear chrom pathway, ROI near electrode
 chrom_IDs = []  # list of chrom IDs in order of how they appear on spreadsheet, populate in main()
@@ -556,9 +557,11 @@ def draw_pathway(activations, centroids):
 
         # wait for the user to click a key before displaying the next arrow on the image
         if args["pathway_step_through"] == "on":
+            display_frame = imutils.resize(image.copy(),
+                                           width=(int(0.5 * image.shape[1])))  # scale down img size
             # display image
             cv2.imshow("Activation pathway", image)
-            cv2.waitKey(0)
+            cv2.waitKey(0)  # wait until key is pressed to close
 
         # if the user wants to save every pathway step image
         if step_folder_dir != "":
@@ -574,8 +577,10 @@ def draw_pathway(activations, centroids):
     print("Saved pathways image to " + pathways_dir)
 
     # display full pathway image
-    cv2.imshow("Activation pathway", image)
-    cv2.waitKey(0)
+    display_frame = imutils.resize(image.copy(),
+                                   width=(int(0.5 * image.shape[1])))  # scale down img size
+    cv2.imshow("Activation pathway", display_frame)
+    cv2.waitKey(0)  # wait until key is pressed to close
 
 
 # summary function of the program

@@ -162,8 +162,15 @@ def getROI(frame):
 
 	# Have user manually choose ROI, record (x,y) and height/width
 	else:
-		[ROI_x, ROI_y, ROI_width, ROI_height] = cv2.selectROI("Select ROI", frame, fromCenter=False,showCrosshair=True)
+		# resize frame before displaying to choose ROI from
+		display_frame = imutils.resize(frame.copy(), width=(int(DISPLAY_SCALE * ORIGINAL_WIDTH)))
+		[ROI_x, ROI_y, ROI_width, ROI_height] = cv2.selectROI("Select ROI", display_frame,
+															  fromCenter=False,showCrosshair=True)
 		cv2.destroyWindow("Select ROI")
+
+		# rescale ROI for original frame
+		[ROI_x, ROI_y, ROI_width, ROI_height] = [int(ROI_x/DISPLAY_SCALE), int(ROI_y/DISPLAY_SCALE),
+												 int(ROI_width/DISPLAY_SCALE), int(ROI_height/DISPLAY_SCALE)]
 
 	print("Region selected:")
 	print("x:", ROI_x, " y:", ROI_y, " width:", ROI_width, " height:", ROI_height)
@@ -756,7 +763,7 @@ def processData(vidPath):
 
 			full_frame = frame
 
-		# resize the frame to only include the ROI
+		# crop the frame to only include the ROI
 		frame = frame[ROI_y:ROI_y + ROI_height, ROI_x: ROI_x + ROI_width]
 
 		# mask out the chromatophores and display the masked frame
