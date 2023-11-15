@@ -19,6 +19,7 @@ import imutils
 
 filepath = "New_Vids/Sept_2022_Tests/TS-20220801155100769_367_12_383_456.xlsx"  # clear chrom pathway, ROI near electrode
 chrom_IDs = []  # list of chrom IDs in order of how they appear on spreadsheet, populate in main()
+centroids = {}
 args = []
 window_size = 30
 n_df = None  # df from neighborhood sheet (populated in load())
@@ -81,6 +82,7 @@ def set_global_nums():
 
     filepath = args["spreadsheet"]
     window_size = args["window_size"]
+    extract_centroids()
     n_df, a_df, c_df = load(filepath)  # load the relevant sheets from the file
     chrom_IDs = a_df.loc[:, "Chromatophore ID"].values.tolist()  # get list of chrom IDs
     # load workbook from .xlsx file
@@ -136,12 +138,26 @@ def save_pathway_to_xlsx(chronological_activations):
     # add labels at top of spreadsheet
     path_sheet.cell(row=1, column=1).value = "Chromatophore ID"
     path_sheet.cell(row=1, column=2).value = "Activation Frame"
+    path_sheet.cell(row=1, column=3).value = "Path time (cur - prev activation frame)"
+    path_sheet.cell(row=1, column=4).value = "Path distance (dist between cur and prev centroid)"
+    path_sheet.cell(row=1, column=5).value = "Path velocity (dist/time)"
 
     curRow = 2
     # add each chrom id and activation time to new row in spreadsheet
-    for chrom_ID, act_time in chronological_activations:
+    for index, (chrom_ID, act_time) in enumerate(chronological_activations):
         path_sheet.cell(row=curRow, column=1).value = chrom_ID
         path_sheet.cell(row=curRow, column=2).value = act_time
+
+        if index > 0:
+            prev_chrom_ID, prev_act_time = chronological_activations[index - 1]
+
+            path_time = act_time - prev_act_time  # time between last activation and current
+            path_dist = math.dist(centroids[prev_chrom_ID], centroids[chrom_ID])
+            path_velocity = path_dist/path_time
+
+            path_sheet.cell(row=curRow, column=3).value = path_time
+            path_sheet.cell(row=curRow, column=4).value = path_dist
+            path_sheet.cell(row=curRow, column=5).value = path_velocity
 
         curRow += 1
 
@@ -391,12 +407,12 @@ def T_N_dependent(time_dep, neighborhood, num_time_dep_pairs):
 
 # get the centroids from the spreadsheet, populates the centroids dict so we can use that instead
 def extract_centroids():
+    global centroids
+
     # load workbook from .xlsx file
     wb = openpyxl.load_workbook(filepath)
     # get centroids sheet
     centroids_sheet = wb["Centroids"]
-    # initialize dictionary
-    centroids = {}
 
     # Put the centroid of each chrom into the centroids dictionary
     for colNumber in range(2, centroids_sheet.max_column):
@@ -408,8 +424,6 @@ def extract_centroids():
         cur_centroid = [x, y]
 
         centroids[cur_ID] = cur_centroid  # populate centroid dict
-
-    return centroids
 
 
 # return ROI from parsing the xlsx filepath
@@ -591,10 +605,6 @@ def main():
     # get activations from spreadsheet
     chronological_activations, activations_by_chrom = get_sorted_activations()
 
-    save_pathway_to_xlsx(chronological_activations)
-    # save the file (under the same name, thus replacing the unedited file)
-    wb.save(filepath)
-
     if len(chronological_activations) == 0:
         print("WARNING: NO ACTIVATED CHROMATOPHORES DETECTED. You may have chosen an area that "
               "does not include any chromatophores that activated over the duration of the video."
@@ -618,8 +628,9 @@ def main():
     else:
         print("T (temporal data) and N (spatial data) are independent in this ROI.")
 
-    # get centroids from sheet
-    centroids = extract_centroids()
+    save_pathway_to_xlsx(chronological_activations)
+    # save the file (under the same name, thus replacing the unedited file)
+    wb.save(filepath)
 
     # if the user wants to only look at specific activations (e.g. 3rd through 6th)
     if args["activations_of_interest"] != "":
