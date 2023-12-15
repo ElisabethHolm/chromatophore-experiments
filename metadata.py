@@ -214,6 +214,31 @@ def has_pos_slope(pt1, pt2):
         return True, slope
 
 
+# save the variance data to a new sheet in the spreadsheet
+def save_deriv_data(chrom_ID, deriv):
+    # create/initialize new derivatives sheet if not already made
+    if 'Derivatives' not in wb.sheetnames:
+        derivSheet = create_new_sheet('Derivatives')
+
+        derivSheet.cell(row=1, column=1).value = "frame"
+
+        # add column in the first column that says each frame number
+        for i in range(2, wb["Areas"].max_row + 1):
+            derivSheet.cell(row=i, column=1).value = i - 2
+    else:
+        derivSheet = wb["Derivatives"]
+
+    # cur col = next blank one
+    curCol = derivSheet.max_column + 1
+
+    # add ID num on row 0
+    derivSheet.cell(row=1, column=curCol).value = chrom_ID
+
+    # iterate through each identified chromatophore
+    for frame, deriv_pt in enumerate(deriv):
+        derivSheet.cell(row=frame + 2, column=curCol).value = deriv_pt
+
+
 # returns all active frame #s (frames when chrom is active) and
 # event frame #s (first time a chrom is activated and deactivated)
 # using the derivative method for finding the activation and deactivation frames
@@ -258,6 +283,8 @@ def find_activations_via_deriv(chrom_ID, area_data):
         # if still active at end of video
         if i == len(area_data) - 1 and len(deact_event_frames) < len(act_event_frames):
             deact_event_frames.append("active at end of vid")
+
+    save_deriv_data(chrom_ID, deriv)
 
     return act_event_frames, deact_event_frames
 
