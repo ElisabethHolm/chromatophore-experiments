@@ -33,7 +33,7 @@ MAX_DISAPPEARED = 30
 nextObjectID = 0
 disappeared = OrderedDict()  # objectID : num of frames it has disappeared for
 matchedCentroids = OrderedDict()  # objectID : centroid
-chromAreas = OrderedDict()  # objectID : area time series
+chromAreas = OrderedDict()  # objectID : area time series (frame : area)
 initialCentroids = OrderedDict()  # object ID : centroid when it was first detected
 
 # directory of raw video to process (relative to where this program file is)
@@ -78,20 +78,23 @@ def parse_args():
 					help="Adjusts program to run for jellyfish vids. Note: overrides \"prioritize\" setting.")
 	ap.add_argument("-p", "--prioritize", default="more accurate IDs and area",
 					choices=["more accurate IDs and area",
-							 "prevent merging of adjacent chroms"],
-					help="Adjusts parameters of detection to priortize certain features -- IDs (best for well-spaced chromatophores), merging (best if many chroms overlap when expanded)")
+							 "prevent merging of adjacent chroms", "manual"],
+					help="Adjusts parameters of detection to priortize certain features -- "
+						 "IDs (best for well-spaced chromatophores), merging (best if many chroms "
+						 "overlap when expanded), manual (set num manually in \"manual\")")
+	ap.add_argument("-a", "--manual", default=3.0, type=float,
+					help="Manually adjusts parameters of detection (if \"prioritize\" set to "
+						 "\"manual\"). Scalar multiplied by PIXELS_PER_MM to set CHROM_PIXEL_DIAMETER. "
+						 "Should be ~the avg mm diameter of the object (~3.0 for chroms).")
 	ap.add_argument("-c", "--save_ROI_context_img", default="on", choices=["off", "on"],
 					help="Save the image that shows where the ROI is in the uncropped frame")
 	ap.add_argument("-m", "--magnification", default=7, type=float,
 					help="Magnification level of microscope when video was filmed")
 	ap.add_argument("-e", "--display_scale", default=DISPLAY_SCALE, type=float,
 					help="Scalar for size that frame is displayed")
-	ap.add_argument("-x", "--original_width", default=ORIGINAL_WIDTH, type=int,
-					help="Width dimension of original video frame in pixels")
-	ap.add_argument("-y", "--original_height", default=ORIGINAL_HEIGHT, type=int,
-					help="Height dimension of original video frame in pixels")
 	ap.add_argument("-i", "--ID_draw_shape", default="contours", choices=["contours", "rotated rectangles"],
-					help="Shape that outlines each chromatophore in the displayed ID frame (does not affect the area calculation)")
+					help="Shape that outlines each chromatophore in the displayed ID frame (does not "
+						 "affect the area calculation)")
 
 	args = vars(ap.parse_args())
 
@@ -110,10 +113,20 @@ def setGlobalNums():
 	global vidName_no_ext
 
 	DISPLAY_SCALE = float(args["display_scale"])
-	ORIGINAL_WIDTH = int(args["original_width"])
-	ORIGINAL_HEIGHT = int(args["original_height"])
 	magnification = float(args["magnification"])
 	curVidPath = args["vid"]
+
+	# open the video
+	vid = cv2.VideoCapture(curVidPath)
+	# read current frame from the video
+	ok, frame = vid.read()
+	# stop if error reading frame or end of vid reached
+	if not ok:
+		raise Exception("Uh oh! There was a problem opening the video. Check that the file exists, "
+						"has read permissions on, and that the file path fed into the program is "
+						"\correct.")
+
+	ORIGINAL_HEIGHT, ORIGINAL_WIDTH, color_channels = frame.shape   # get image info from 1st frame
 
 	# video file name (with extension)
 	vidName_ext = os.path.basename(curVidPath)
@@ -137,10 +150,12 @@ def setGlobalNums():
 			CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 3)
 		elif (args["prioritize"] == "prevent merging of adjacent chroms"):
 			CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 2.9)
+		elif (args["prioritize"] == "manual"):
+			CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * args["manual"])
 			
 	else:  # settings for jellyfish mode
-		PIXELS_PER_MM = (800.353 / 1) * (magnification / 50) * (ORIGINAL_WIDTH / 1920)  # TODO get calibration measurements/check if i need to??
-		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 3)  # random guess that jellyfish bell is 30 mm diameter roughly TODO change
+		PIXELS_PER_MM = (800.353 / 1) * (magnification / 50) * (ORIGINAL_WIDTH / 1920)
+		CHROM_PIXEL_DIAMETER = int(PIXELS_PER_MM * 3)
 		# opt 1: * 30
 		# opt 2: * 3
 	
@@ -509,9 +524,66 @@ def getStdDev(areas):
 	return stdDev
 
 
+# interpolate a chrom's area data
+# areas: dict of frame : area
+# num_frames: number of frames in entire video
+def interpolateAreas(areas, last_frame):
+	# get frame nums that don't have area data
+	print(areas)
+	missing_frames = [frame for frame in range(last_frame + 1) if frame not in areas.keys()]
+	print("missing", len(missing_frames), "frames")
+
+	# if no missing frames, nothing to interpolate. Return original
+	if not missing_frames:
+		return areas
+
+	# if appears after start of vid, we'll hold the area constant until 1st real pt
+	# do this by pretending that the 1st frame has the same area as the first actual area
+	if missing_frames[0] == 0:
+		first_actual_fr = min(areas.keys())
+		for f in range(first_actual_fr):
+			areas[f] = areas[first_actual_fr]  # set to most recently recorded area
+			missing_frames.pop(f)  # remove frame from missing_frames since we pretend to see it
+
+	# if disappears for rest of vid, we'll hold the area constant until end in interpolation
+	# do this by pretending that the last frame has the same area as the most recently recorded one
+	if missing_frames[-1] == last_frame:
+		last_actual_fr = max(areas.keys())
+		for f in range(last_frame, last_actual_fr, -1):
+			areas[f] = areas[last_actual_fr]  # set to most recently recorded area
+			missing_frames.remove(f)  # remove frame from missing_frames since we pretend to see it
+		# areas[num_frames - 1] = areas[max(areas.keys())]  # set to most recently recorded area
+		# missing_frames.pop(-1)  # remove last frame from missing_frames since we pretend to see it
+
+	# if no missing frames, nothing to interpolate. Return original
+	if not missing_frames:
+		return areas
+
+	print("now missing", len(missing_frames), "frames")
+	print(missing_frames)
+	print()
+	print(areas.keys())
+	print()
+	print(areas.values())
+
+	# evaluate the missing frames
+	interpolated_area_points = np.interp(missing_frames, areas.keys(), areas.values())
+
+	# add interpolated points to area time series dict
+	interpolated = areas.copy()
+	for i in range(len(missing_frames)):
+		interpolated[missing_frames[i]] = interpolated_area_points[i]
+
+	print(interpolated.keys(), "interpolated keys")
+	print()
+	print(interpolated.values(), "interpolated values")
+	return interpolated
+
+
 # filter out irrelevant data entries (ex: chrom that was only identified in
 # a few frames)
-def cleanUpData():
+# num_frames = number of frames in the video
+def cleanUpData(num_frames):
 	global chromAreas
 
 	# make a copy to iterate through to avoid "mutated during iteration" error
@@ -523,8 +595,18 @@ def cleanUpData():
 		if len(areas) < 25:
 			del chromAreas[id_num]
 			del initialCentroids[id_num]
+			continue
+
+
+		# convert area time series dict to list
+		#areas_list = [areas[frame] if frame in areas.keys() else None for frame in range(num_frames + 1)]
+		# interpolate chrom area
+		#interpolated_areas = fill_in_data_gaps(areas_list)  # not working -- error when import funcs
+		#interpolated_areas = interpolateAreas(areas, num_frames).values() # not working -- ValueError: object of too small depth for desired array
+
 		# if a chromatophore doesn't change much over the course of the video, delete it
-		elif getStdDev(areas.values()) < 0.05:
+		if getStdDev(areas.values()) < 0.05:  # old (didn't interpolate datapoints before getting std dev)
+		#if getStdDev(interpolated_areas) < 0.05:
 			del chromAreas[id_num]
 			del initialCentroids[id_num]
 
@@ -808,6 +890,8 @@ def processData(vidPath):
 
 		curFrameIndex += 1  # update frame index
 
+	last_frame = curFrameIndex - 1
+
 	if args["frame_cap"] != "off":
 		roiString = "_" + str(ROI_x) + "_" + str(ROI_y) + "_" + str(ROI_width) + "_" + str(ROI_height)
 		frameCapDir = curVidPath.replace(vidName_ext, '') + "frame_cap_" + vidName_no_ext + roiString
@@ -815,10 +899,10 @@ def processData(vidPath):
 
 	if args["watch_only"] == "off":
 		# save uncleaned data in a .xlsx file
-		formatData(curFrameIndex - 1, ROI, cleaned=False)
+		formatData(last_frame, ROI, cleaned=False)
 
 		# filter out irrelevant data entries
-		cleanUpData()
+		cleanUpData(last_frame)
 
 		# format cleaned dataset and save as a .xls file in video's original directory
 		formatData(curFrameIndex - 1, ROI, cleaned=True)
