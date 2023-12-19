@@ -653,9 +653,6 @@ def cleanUpData(last_frame):
 		# if a chromatophore doesn't change much over the course of the video, delete it
 		#if getStdDev(areas.values()) < 0.05:  # option 3: old (didn't interpolate datapoints before getting std dev)
 		if getStdDev(interpolated_areas) < 0.05:
-			print(id_num)
-			print(areas_list)
-			print(interpolated_areas)
 			del chromAreas[id_num]
 			del initialCentroids[id_num]
 
