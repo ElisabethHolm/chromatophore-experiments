@@ -524,9 +524,53 @@ def getStdDev(areas):
 	return stdDev
 
 
+# modified FROM METADATA.PY
+# fill in gaps in data (essentially drawing a straight line between points across the gaps)
+# area: list with area data (and None where no real data)
+# just_nums: list of areas (when recorded, so not including the None entries)
+# just_nums_frames: list of corresponding frames to the areas in just_nums
+# returns list of same size, but with data interpolated
+def fill_in_data_gaps(data, just_nums, just_nums_frames):
+    filled_data = data.copy()
+
+    # iterate through all the actual numerical data
+    for i in range(len(just_nums_frames)):
+        # if this is the first one in the just_nums_frames list
+        # and there is a gap that at the start of the data, hold the first real num constant
+        if i == 0 and just_nums_frames[i] != 0:
+            for j in range(just_nums_frames[i]):
+                filled_data[j] = just_nums[i]
+
+        # if this is the last one in the just_num_frames list
+        if i == len(just_nums_frames) - 1:
+            # if there is a gap that lasts until the end of the vid, hold the last real num constant
+            if just_nums_frames[i] != len(data) - 1:
+                for j in range(just_nums_frames[i], len(data)):
+                    filled_data[j] = just_nums[i]
+            # if last frame has actual data in it, no need to do anything (no gaps to fill)
+        # otherwise, fill gaps by connecting actual data points linearly
+        else:
+            cur_existing_f = just_nums_frames[i]  # existing frame num
+            next_existing_f = just_nums_frames[i + 1]  # existing frame num
+
+            # if there is a gap that starts at the cur existing frame
+            if cur_existing_f + 1 != next_existing_f:
+                # calculate number of blank frames (between the two existing frames)
+                num_blank_frames = next_existing_f - cur_existing_f - 1
+                # create filler datapoints (note: endpoints = actual data)
+                filler_points = np.linspace(data[cur_existing_f], data[next_existing_f],
+											num=num_blank_frames + 2)
+                # fill in missing data in data array
+                for j in range(cur_existing_f, next_existing_f + 1):
+                    filled_data[j] = filler_points.item(j - cur_existing_f)
+
+    return filled_data
+
+
+# NOT CURRENTLY WORKING -- interpolation with numpy interpolate
 # interpolate a chrom's area data
 # areas: dict of frame : area
-# num_frames: number of frames in entire video
+# last_frame: last frame (number) of entire video
 def interpolateAreas(areas, last_frame):
 	# get frame nums that don't have area data
 	print(areas)
@@ -582,8 +626,8 @@ def interpolateAreas(areas, last_frame):
 
 # filter out irrelevant data entries (ex: chrom that was only identified in
 # a few frames)
-# num_frames = number of frames in the video
-def cleanUpData(num_frames):
+# last_frame = index of last frame of the video
+def cleanUpData(last_frame):
 	global chromAreas
 
 	# make a copy to iterate through to avoid "mutated during iteration" error
@@ -597,16 +641,21 @@ def cleanUpData(num_frames):
 			del initialCentroids[id_num]
 			continue
 
-
+		# option 1
 		# convert area time series dict to list
-		#areas_list = [areas[frame] if frame in areas.keys() else None for frame in range(num_frames + 1)]
+		areas_list = [areas[frame] if frame in areas.keys() else None for frame in range(last_frame + 1)]
 		# interpolate chrom area
-		#interpolated_areas = fill_in_data_gaps(areas_list)  # not working -- error when import funcs
-		#interpolated_areas = interpolateAreas(areas, num_frames).values() # not working -- ValueError: object of too small depth for desired array
+		interpolated_areas = fill_in_data_gaps(areas_list, list(areas.values()), list(areas.keys()))
+
+		# option 2: numpy version -- not working -- ValueError: object of too small depth for desired array
+		#interpolated_areas = interpolateAreas(areas, num_frames).values()
 
 		# if a chromatophore doesn't change much over the course of the video, delete it
-		if getStdDev(areas.values()) < 0.05:  # old (didn't interpolate datapoints before getting std dev)
-		#if getStdDev(interpolated_areas) < 0.05:
+		#if getStdDev(areas.values()) < 0.05:  # option 3: old (didn't interpolate datapoints before getting std dev)
+		if getStdDev(interpolated_areas) < 0.05:
+			print(id_num)
+			print(areas_list)
+			print(interpolated_areas)
 			del chromAreas[id_num]
 			del initialCentroids[id_num]
 
